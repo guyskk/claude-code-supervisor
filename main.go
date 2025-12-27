@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,15 +13,9 @@ import (
 // Version is set by build flags during release
 var Version = "dev"
 
-// Config represents the structure of ccc.json
-type Config struct {
-	Settings        map[string]interface{}            `json:"settings"`
-	CurrentProvider string                            `json:"current_provider"`
-	Providers       map[string]map[string]interface{} `json:"providers"`
-}
-
-// getClaudeDir returns the Claude configuration directory
-func getClaudeDir() string {
+// getClaudeDirFunc is a variable that holds the function to get the Claude directory
+// This allows tests to override it for testing purposes
+var getClaudeDirFunc = func() string {
 	if workDir := os.Getenv("CCC_CONFIG_DIR"); workDir != "" {
 		return workDir
 	}
@@ -30,6 +25,26 @@ func getClaudeDir() string {
 		os.Exit(1)
 	}
 	return filepath.Join(homeDir, ".claude")
+}
+
+// getClaudeDir returns the Claude configuration directory
+func getClaudeDir() string {
+	return getClaudeDirFunc()
+}
+
+// getUserInputFunc is a variable that holds the function to get user input
+// This allows tests to override it for testing purposes
+var getUserInputFunc = func(prompt string) (string, error) {
+	fmt.Print(prompt)
+	reader := bufio.NewReader(os.Stdin)
+	return reader.ReadString('\n')
+}
+
+// Config represents the structure of ccc.json
+type Config struct {
+	Settings        map[string]interface{}            `json:"settings"`
+	CurrentProvider string                            `json:"current_provider"`
+	Providers       map[string]map[string]interface{} `json:"providers"`
 }
 
 // getConfigPath returns the path to ccc.json
@@ -91,6 +106,86 @@ Environment Variables:
 		}
 	}
 	fmt.Println()
+}
+
+// checkExistingSettings checks if ~/.claude/settings.json exists
+func checkExistingSettings() bool {
+	settingsPath := getSettingsPath("")
+	_, err := os.Stat(settingsPath)
+	return err == nil
+}
+
+// promptUserForMigration prompts the user to confirm migration from existing settings
+func promptUserForMigration() bool {
+	cccPath := getConfigPath()
+	settingsPath := getSettingsPath("")
+
+	fmt.Printf("ccc configuration not found: %s\n", cccPath)
+	fmt.Printf("Found existing Claude configuration: %s\n", settingsPath)
+	fmt.Println()
+
+	input, err := getUserInputFunc("Would you like to create ccc config from existing settings? [y/N] ")
+	if err != nil {
+		return false
+	}
+
+	input = strings.TrimSpace(strings.ToLower(input))
+	return input == "y" || input == "yes"
+}
+
+// migrateFromSettings creates a new ccc.json from existing settings.json
+func migrateFromSettings() error {
+	settingsPath := getSettingsPath("")
+
+	// Read existing settings.json
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return fmt.Errorf("failed to read settings file: %w", err)
+	}
+
+	var settings map[string]interface{}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return fmt.Errorf("failed to parse settings file: %w", err)
+	}
+
+	// Extract env from settings
+	var envConfig map[string]interface{}
+	if envVal, exists := settings["env"]; exists {
+		if envMap, ok := envVal.(map[string]interface{}); ok {
+			envConfig = envMap
+		}
+	}
+
+	// Remove env from settings to create base settings
+	baseSettings := make(map[string]interface{})
+	for k, v := range settings {
+		if k != "env" {
+			baseSettings[k] = v
+		}
+	}
+
+	// Create new ccc config
+	config := &Config{
+		Settings:        baseSettings,
+		CurrentProvider: "default",
+		Providers:       make(map[string]map[string]interface{}),
+	}
+
+	// Always create default provider (even if env is empty)
+	defaultProvider := make(map[string]interface{})
+	if envConfig != nil {
+		defaultProvider["env"] = envConfig
+	}
+	config.Providers["default"] = defaultProvider
+
+	// Save the new config
+	if err := saveConfig(config); err != nil {
+		return fmt.Errorf("failed to save ccc config: %w", err)
+	}
+
+	cccPath := getConfigPath()
+	fmt.Printf("Created ccc config with 'default' provider: %s\n", cccPath)
+	return nil
 }
 
 // loadConfig reads and parses ccc.json
@@ -280,8 +375,22 @@ func main() {
 	// Load configuration first to check if it exists and is valid
 	config, err := loadConfig()
 	if err != nil {
-		showHelp(nil, err)
-		os.Exit(1)
+		// Try to migrate from existing settings.json
+		if checkExistingSettings() && promptUserForMigration() {
+			if err := migrateFromSettings(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error migrating from settings: %v\n", err)
+				os.Exit(1)
+			}
+			// Reload config after migration
+			config, err = loadConfig()
+			if err != nil {
+				showHelp(nil, err)
+				os.Exit(1)
+			}
+		} else {
+			showHelp(nil, err)
+			os.Exit(1)
+		}
 	}
 
 	// Determine which provider to use
