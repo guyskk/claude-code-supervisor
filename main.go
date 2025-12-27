@@ -318,10 +318,17 @@ func validateProvider(config *Config, providerName string, testAPI bool) *Valida
 		result.Errors = append(result.Errors, "Missing required environment variable: ANTHROPIC_BASE_URL")
 	} else {
 		result.BaseURL = baseURL
-		// Validate URL format
-		if _, err := url.Parse(baseURL); err != nil {
+		// Validate URL format - must be http or https
+		parsedURL, err := url.Parse(baseURL)
+		if err != nil {
 			result.Valid = false
 			result.Errors = append(result.Errors, fmt.Sprintf("Invalid Base URL format: %v", err))
+		} else if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+			result.Valid = false
+			result.Errors = append(result.Errors, "Invalid Base URL format: must use http:// or https:// scheme")
+		} else if parsedURL.Host == "" {
+			result.Valid = false
+			result.Errors = append(result.Errors, "Invalid Base URL format: missing host")
 		}
 	}
 

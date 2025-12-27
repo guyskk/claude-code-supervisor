@@ -525,3 +525,285 @@ func TestMigrationFlowErrors(t *testing.T) {
 		}
 	})
 }
+
+// TestValidateProvider tests the validateProvider function
+func TestValidateProvider(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    *Config
+		provider  string
+		testAPI   bool
+		wantValid bool
+		wantErrs  []string
+	}{
+		{
+			name: "valid provider with all required fields",
+			config: &Config{
+				Providers: map[string]map[string]interface{}{
+					"kimi": {
+						"env": map[string]interface{}{
+							"ANTHROPIC_BASE_URL":   "https://api.moonshot.cn/anthropic",
+							"ANTHROPIC_AUTH_TOKEN": "sk-test-token",
+							"ANTHROPIC_MODEL":      "claude-3-5-sonnet-20241022",
+						},
+					},
+				},
+			},
+			provider:  "kimi",
+			testAPI:   false,
+			wantValid: true,
+			wantErrs:  nil,
+		},
+		{
+			name: "provider missing ANTHROPIC_BASE_URL",
+			config: &Config{
+				Providers: map[string]map[string]interface{}{
+					"glm": {
+						"env": map[string]interface{}{
+							"ANTHROPIC_AUTH_TOKEN": "sk-test-token",
+						},
+					},
+				},
+			},
+			provider:  "glm",
+			testAPI:   false,
+			wantValid: false,
+			wantErrs:  []string{"Missing required environment variable: ANTHROPIC_BASE_URL"},
+		},
+		{
+			name: "provider missing ANTHROPIC_AUTH_TOKEN",
+			config: &Config{
+				Providers: map[string]map[string]interface{}{
+					"m2": {
+						"env": map[string]interface{}{
+							"ANTHROPIC_BASE_URL": "https://api.minimaxi.com/anthropic",
+						},
+					},
+				},
+			},
+			provider:  "m2",
+			testAPI:   false,
+			wantValid: false,
+			wantErrs:  []string{"Missing required environment variable: ANTHROPIC_AUTH_TOKEN"},
+		},
+		{
+			name: "provider with invalid URL format",
+			config: &Config{
+				Providers: map[string]map[string]interface{}{
+					"broken": {
+						"env": map[string]interface{}{
+							"ANTHROPIC_BASE_URL":   "not-a-valid-url",
+							"ANTHROPIC_AUTH_TOKEN": "sk-test-token",
+						},
+					},
+				},
+			},
+			provider:  "broken",
+			testAPI:   false,
+			wantValid: false,
+			wantErrs:  []string{"Invalid Base URL format: must use http:// or https:// scheme"},
+		},
+		{
+			name: "provider not found",
+			config: &Config{
+				Providers: map[string]map[string]interface{}{
+					"kimi": {},
+				},
+			},
+			provider:  "unknown",
+			testAPI:   false,
+			wantValid: false,
+			wantErrs:  []string{"Provider 'unknown' not found in configuration"},
+		},
+		{
+			name: "provider with minimal valid config",
+			config: &Config{
+				Providers: map[string]map[string]interface{}{
+					"minimal": {
+						"env": map[string]interface{}{
+							"ANTHROPIC_BASE_URL":   "https://api.example.com",
+							"ANTHROPIC_AUTH_TOKEN": "sk-test",
+						},
+					},
+				},
+			},
+			provider:  "minimal",
+			testAPI:   false,
+			wantValid: true,
+			wantErrs:  nil,
+		},
+		{
+			name: "provider without env field",
+			config: &Config{
+				Providers: map[string]map[string]interface{}{
+					"noenv": {},
+				},
+			},
+			provider:  "noenv",
+			testAPI:   false,
+			wantValid: false,
+			wantErrs: []string{
+				"Missing required environment variable: ANTHROPIC_BASE_URL",
+				"Missing required environment variable: ANTHROPIC_AUTH_TOKEN",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := validateProvider(tt.config, tt.provider, tt.testAPI)
+
+			if result.Valid != tt.wantValid {
+				t.Errorf("validateProvider() Valid = %v, want %v", result.Valid, tt.wantValid)
+			}
+
+			if len(result.Errors) != len(tt.wantErrs) {
+				t.Errorf("validateProvider() got %d errors, want %d", len(result.Errors), len(tt.wantErrs))
+			}
+
+			for i, wantErr := range tt.wantErrs {
+				if i >= len(result.Errors) {
+					t.Errorf("validateProvider() missing expected error %d: %q", i, wantErr)
+					continue
+				}
+				if !strings.Contains(result.Errors[i], wantErr) {
+					t.Errorf("validateProvider() error %d = %q, want to contain %q", i, result.Errors[i], wantErr)
+				}
+			}
+		})
+	}
+}
+
+// TestValidateAllProviders tests the validateAllProviders function
+func TestValidateAllProviders(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *Config
+		testAPI     bool
+		wantTotal   int
+		wantValid   int
+		wantInvalid int
+	}{
+		{
+			name: "all providers valid",
+			config: &Config{
+				Providers: map[string]map[string]interface{}{
+					"kimi": {
+						"env": map[string]interface{}{
+							"ANTHROPIC_BASE_URL":   "https://api.moonshot.cn/anthropic",
+							"ANTHROPIC_AUTH_TOKEN": "sk-test",
+						},
+					},
+					"glm": {
+						"env": map[string]interface{}{
+							"ANTHROPIC_BASE_URL":   "https://open.bigmodel.cn/api/anthropic",
+							"ANTHROPIC_AUTH_TOKEN": "sk-test",
+						},
+					},
+				},
+			},
+			testAPI:     false,
+			wantTotal:   2,
+			wantValid:   2,
+			wantInvalid: 0,
+		},
+		{
+			name: "mixed valid and invalid providers",
+			config: &Config{
+				Providers: map[string]map[string]interface{}{
+					"valid": {
+						"env": map[string]interface{}{
+							"ANTHROPIC_BASE_URL":   "https://api.example.com",
+							"ANTHROPIC_AUTH_TOKEN": "sk-test",
+						},
+					},
+					"invalid": {
+						"env": map[string]interface{}{
+							"ANTHROPIC_AUTH_TOKEN": "sk-test",
+						},
+					},
+				},
+			},
+			testAPI:     false,
+			wantTotal:   2,
+			wantValid:   1,
+			wantInvalid: 1,
+		},
+		{
+			name: "all providers invalid",
+			config: &Config{
+				Providers: map[string]map[string]interface{}{
+					"broken1": {
+						"env": map[string]interface{}{
+							"ANTHROPIC_AUTH_TOKEN": "sk-test",
+						},
+					},
+					"broken2": {},
+				},
+			},
+			testAPI:     false,
+			wantTotal:   2,
+			wantValid:   0,
+			wantInvalid: 2,
+		},
+		{
+			name: "no providers configured",
+			config: &Config{
+				Providers: map[string]map[string]interface{}{},
+			},
+			testAPI:     false,
+			wantTotal:   0,
+			wantValid:   0,
+			wantInvalid: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			summary := validateAllProviders(tt.config, tt.testAPI)
+
+			if summary.Total != tt.wantTotal {
+				t.Errorf("validateAllProviders() Total = %v, want %v", summary.Total, tt.wantTotal)
+			}
+			if summary.Valid != tt.wantValid {
+				t.Errorf("validateAllProviders() Valid = %v, want %v", summary.Valid, tt.wantValid)
+			}
+			if summary.Invalid != tt.wantInvalid {
+				t.Errorf("validateAllProviders() Invalid = %v, want %v", summary.Invalid, tt.wantInvalid)
+			}
+		})
+	}
+}
+
+// TestValidationResultFields tests that ValidationResult contains expected fields
+func TestValidationResultFields(t *testing.T) {
+	config := &Config{
+		Providers: map[string]map[string]interface{}{
+			"test": {
+				"env": map[string]interface{}{
+					"ANTHROPIC_BASE_URL":   "https://api.example.com",
+					"ANTHROPIC_AUTH_TOKEN": "sk-test-token",
+					"ANTHROPIC_MODEL":      "claude-3-opus-20240229",
+				},
+			},
+		},
+	}
+
+	result := validateProvider(config, "test", false)
+
+	if result.Provider != "test" {
+		t.Errorf("Result.Provider = %q, want %q", result.Provider, "test")
+	}
+
+	if result.BaseURL != "https://api.example.com" {
+		t.Errorf("Result.BaseURL = %q, want %q", result.BaseURL, "https://api.example.com")
+	}
+
+	if result.Model != "claude-3-opus-20240229" {
+		t.Errorf("Result.Model = %q, want %q", result.Model, "claude-3-opus-20240229")
+	}
+
+	if result.APIStatus != "skipped" {
+		t.Errorf("Result.APIStatus = %q, want %q", result.APIStatus, "skipped")
+	}
+}
