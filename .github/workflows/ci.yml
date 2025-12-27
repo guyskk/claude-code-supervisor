@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run gofmt
+        run: |
+          gofmt -l .
+          test -z "$(gofmt -l .)" || exit 1
+
+      - name: Run go vet
+        run: go vet ./...
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform:
+          - darwin-amd64
+          - darwin-arm64
+          - linux-amd64
+          - linux-arm64
+          - windows-amd64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Parse platform
+        id: platform
+        run: |
+          OS=$(echo "${{ matrix.platform }}" | cut -d'-' -f1)
+          ARCH=$(echo "${{ matrix.platform }}" | cut -d'-' -f2)
+          EXT=""
+          if [ "$OS" = "windows" ]; then
+            EXT=".exe"
+          fi
+          echo "os=$OS" >> $GITHUB_OUTPUT
+          echo "arch=$ARCH" >> $GITHUB_OUTPUT
+          echo "ext=$EXT" >> $GITHUB_OUTPUT
+
+      - name: Build
+        run: |
+          CGO_ENABLED=0 GOOS="${{ steps.platform.outputs.os }}" GOARCH="${{ steps.platform.outputs.arch }}" \
+            go build -ldflags="-s -w" -o dist/ccc-${{ matrix.platform }}${{ steps.platform.outputs.ext }} main.go
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccc-${{ matrix.platform }}
+          path: dist/ccc-${{ matrix.platform }}${{ steps.platform.outputs.ext }}
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test -v -race ./...
