@@ -2,6 +2,19 @@
 
 Instructions for AI coding assistants using OpenSpec for spec-driven development.
 
+## 特别说明：你要使用中文
+
+我的母语是中文，你要用中文和我沟通，这样更方便。
+
+1. 创建 proposal 时使用中文
+ - proposal.md 用中文编写
+ - tasks.md 用中文编写任务
+ - design.md（如果需要）用中文编写设计文档
+2. spec delta 中使用中文
+ - Requirement 描述用中文
+ - Scenario 描述用中文
+3. 参考 project.md 的语言，project.md 现在是中文，你生成的 spec 也要用中文
+
 ## TL;DR Quick Checklist
 
 - Search existing work: `openspec spec list --long`, `openspec list` (use `rg` only for full-text search)
