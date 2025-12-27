@@ -138,3 +138,72 @@ ccc kimi /path/to/project
 # 使用自定义配置目录调试
 CCC_CONFIG_DIR=./tmp ccc kimi
 ```
+
+## 提供商管理
+
+使用 `ccc provider` 子命令管理 API 提供商配置，无需手动编辑 JSON 文件。
+
+### 列出所有提供商
+
+```bash
+ccc provider list
+```
+
+显示所有已配置的提供商及其 BASE_URL 和 MODEL。当前提供商用 `*` 标记。
+
+### 添加提供商
+
+**交互式模式**（推荐首次配置使用）：
+```bash
+ccc provider add openai
+```
+
+系统会逐步提示您输入：
+- ANTHROPIC_BASE_URL（必须是 HTTPS）
+- ANTHROPIC_AUTH_TOKEN
+- ANTHROPIC_MODEL
+- ANTHROPIC_SMALL_FAST_MODEL（可选）
+
+**非交互式模式**（适用于脚本和自动化）：
+```bash
+ccc provider add openai \
+  --base-url=https://api.openai.com/v1 \
+  --token=sk-your-token-here \
+  --model=gpt-4 \
+  --small-model=gpt-3.5-turbo
+```
+
+### 显示提供商详情
+
+```bash
+ccc provider show kimi
+```
+
+显示提供商的配置信息，敏感的 token 会自动脱敏显示。
+
+### 更新提供商配置
+
+```bash
+ccc provider set kimi ANTHROPIC_MODEL kimi-k1.5
+```
+
+更新提供商的某个环境变量。如果是当前提供商，配置文件会自动重新生成。
+
+### 删除提供商
+
+```bash
+ccc provider remove old-provider
+```
+
+从配置中删除提供商。以下情况无法删除：
+- 当前正在使用的提供商（请先切换到其他提供商）
+- 最后一个提供商（至少需要保留一个）
+
+### 提供商命名规则
+
+提供商名称必须：
+- 仅包含小写字母、数字、连字符和下划线
+- 不能为空
+
+示例：`kimi`、`glm-4`、`mini_max`、`openai`
+

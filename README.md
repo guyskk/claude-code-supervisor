@@ -155,3 +155,72 @@ ccc kimi /path/to/project
 # Debug with custom config
 CCC_CONFIG_DIR=./tmp ccc kimi
 ```
+
+## Provider Management
+
+Use the `ccc provider` subcommand to manage your API providers without manually editing JSON files.
+
+### List Providers
+
+```bash
+ccc provider list
+```
+
+Shows all configured providers with their BASE_URL and MODEL. The current provider is marked with `*`.
+
+### Add a Provider
+
+**Interactive mode** (recommended for first-time setup):
+```bash
+ccc provider add openai
+```
+
+You'll be prompted to enter:
+- ANTHROPIC_BASE_URL (must be HTTPS)
+- ANTHROPIC_AUTH_TOKEN
+- ANTHROPIC_MODEL
+- ANTHROPIC_SMALL_FAST_MODEL (optional)
+
+**Non-interactive mode** (for scripts and automation):
+```bash
+ccc provider add openai \
+  --base-url=https://api.openai.com/v1 \
+  --token=sk-your-token-here \
+  --model=gpt-4 \
+  --small-model=gpt-3.5-turbo
+```
+
+### Show Provider Details
+
+```bash
+ccc provider show kimi
+```
+
+Displays the provider's configuration with sensitive tokens masked.
+
+### Update Provider Configuration
+
+```bash
+ccc provider set kimi ANTHROPIC_MODEL kimi-k1.5
+```
+
+Updates a specific environment variable for a provider. If it's the current provider, the settings file will be automatically regenerated.
+
+### Remove a Provider
+
+```bash
+ccc provider remove old-provider
+```
+
+Deletes a provider from your configuration. You cannot remove:
+- The current provider (switch to another one first)
+- The last remaining provider
+
+### Provider Naming Rules
+
+Provider names must:
+- Contain only lowercase letters, numbers, hyphens, and underscores
+- Not be empty
+
+Examples: `kimi`, `glm-4`, `mini_max`, `openai`
+
