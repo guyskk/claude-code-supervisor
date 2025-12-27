@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Version is set by build flags during release
@@ -47,6 +50,27 @@ type Config struct {
 	Providers       map[string]map[string]interface{} `json:"providers"`
 }
 
+// ValidationResult represents the result of validating a provider configuration
+type ValidationResult struct {
+	Provider    string
+	Valid       bool
+	Warnings    []string
+	Errors      []string
+	BaseURL     string
+	Model       string
+	APIStatus   string // "ok", "failed", "skipped"
+	APIError    error
+}
+
+// ValidationSummary represents the summary of validating multiple providers
+type ValidationSummary struct {
+	Total      int
+	Valid      int
+	Invalid    int
+	Warning    int
+	Results    []*ValidationResult
+}
+
 // getConfigPath returns the path to ccc.json
 func getConfigPath() string {
 	return filepath.Join(getClaudeDir(), "ccc.json")
@@ -69,7 +93,14 @@ Claude Code Configuration Switcher
 Commands:
   ccc              Use the current provider (or the first provider if none is set)
   ccc <provider>   Switch to the specified provider and run Claude Code
+  ccc validate     Validate the current provider configuration
+  ccc validate <provider>   Validate a specific provider configuration
+  ccc validate --all        Validate all provider configurations
   ccc --help       Show this help message
+  ccc --version    Show version information
+
+Validation Options:
+  --no-api-test    Skip API connectivity test (only check config format)
 
 Environment Variables:
   CCC_CONFIG_DIR     Override the configuration directory (default: ~/.claude/)
@@ -248,6 +279,247 @@ func saveSettings(settings map[string]interface{}, providerName string) error {
 	return nil
 }
 
+// validateProvider validates a single provider configuration
+func validateProvider(config *Config, providerName string, testAPI bool) *ValidationResult {
+	result := &ValidationResult{
+		Provider: providerName,
+		Valid:    true,
+		Warnings: []string{},
+		Errors:   []string{},
+		APIStatus: "skipped",
+	}
+
+	// Check if provider exists
+	provider, exists := config.Providers[providerName]
+	if !exists {
+		result.Valid = false
+		result.Errors = append(result.Errors, fmt.Sprintf("Provider '%s' not found in configuration", providerName))
+		return result
+	}
+
+	// Extract env from provider config
+	var env map[string]interface{}
+	if envVal, ok := provider["env"]; ok {
+		if envMap, ok := envVal.(map[string]interface{}); ok {
+			env = envMap
+		}
+	}
+
+	if env == nil {
+		env = make(map[string]interface{})
+	}
+
+	// Check required environment variables
+	baseURL, hasBaseURL := env["ANTHROPIC_BASE_URL"].(string)
+	authToken, hasAuthToken := env["ANTHROPIC_AUTH_TOKEN"].(string)
+
+	if !hasBaseURL || baseURL == "" {
+		result.Valid = false
+		result.Errors = append(result.Errors, "Missing required environment variable: ANTHROPIC_BASE_URL")
+	} else {
+		result.BaseURL = baseURL
+		// Validate URL format
+		if _, err := url.Parse(baseURL); err != nil {
+			result.Valid = false
+			result.Errors = append(result.Errors, fmt.Sprintf("Invalid Base URL format: %v", err))
+		}
+	}
+
+	if !hasAuthToken || authToken == "" {
+		result.Valid = false
+		result.Errors = append(result.Errors, "Missing required environment variable: ANTHROPIC_AUTH_TOKEN")
+	}
+
+	// Check model if present
+	if model, ok := env["ANTHROPIC_MODEL"].(string); ok {
+		result.Model = model
+	}
+
+	// Test API connection if requested and config is valid so far
+	if testAPI && result.Valid && hasBaseURL && hasAuthToken {
+		result.APIStatus = testAPIConnection(baseURL, authToken)
+	}
+
+	return result
+}
+
+// testAPIConnection tests if the API endpoint is reachable
+func testAPIConnection(baseURL, authToken string) string {
+	// Create a simple test request to verify connectivity
+	// We'll try to reach the API endpoint with a minimal request
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	// Try to make a simple request to the base URL
+	// Note: We're not making a full API call, just checking connectivity
+	req, err := http.NewRequest("GET", baseURL, nil)
+	if err != nil {
+		return fmt.Sprintf("failed: %v", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	req.Header.Set("x-api-key", authToken)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Sprintf("failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response status
+	// 401/403 indicates auth issues but connectivity is OK
+	// 404 might mean the endpoint structure is different but host is reachable
+	// 5xx indicates server issues
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		return "ok" // Connection works, auth might fail but that's expected
+	}
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 500 {
+		return "ok"
+	}
+
+	return fmt.Sprintf("failed: HTTP %d", resp.StatusCode)
+}
+
+// validateAllProviders validates all configured providers
+func validateAllProviders(config *Config, testAPI bool) *ValidationSummary {
+	summary := &ValidationSummary{
+		Total:   len(config.Providers),
+		Results: make([]*ValidationResult, 0, len(config.Providers)),
+	}
+
+	for providerName := range config.Providers {
+		result := validateProvider(config, providerName, testAPI)
+		summary.Results = append(summary.Results, result)
+
+		if result.Valid {
+			summary.Valid++
+		} else {
+			summary.Invalid++
+		}
+
+		if result.APIStatus == "failed" {
+			summary.Warning++
+		}
+	}
+
+	return summary
+}
+
+// printValidationResult prints a single validation result
+func printValidationResult(result *ValidationResult) {
+	status := "Valid"
+	statusColor := "\033[32m" // green
+	if !result.Valid {
+		status = "Invalid"
+		statusColor = "\033[31m" // red
+	} else if result.APIStatus == "failed" {
+		status = "Warning"
+		statusColor = "\033[33m" // yellow
+	}
+
+	fmt.Printf("  %s%s\033[0m: %s\n", statusColor, status, result.Provider)
+
+	if result.BaseURL != "" {
+		fmt.Printf("    Base URL: %s\n", result.BaseURL)
+	}
+	if result.Model != "" {
+		fmt.Printf("    Model: %s\n", result.Model)
+	}
+	if result.APIStatus != "skipped" {
+		apiStatus := "OK"
+		apiColor := "\033[32m"
+		if result.APIStatus != "ok" {
+			apiStatus = result.APIStatus
+			apiColor = "\033[33m"
+		}
+		fmt.Printf("    API connection: %s%s\033[0m\n", apiColor, apiStatus)
+	}
+
+	for _, warning := range result.Warnings {
+		fmt.Printf("    Warning: %s\n", warning)
+	}
+	for _, err := range result.Errors {
+		fmt.Printf("    Error: %s\n", err)
+	}
+}
+
+// runValidation handles the validate command
+func runValidation(config *Config, args []string) error {
+	// Parse validation flags
+	testAPI := true
+	validateAll := false
+	targetProvider := ""
+
+	for i, arg := range args {
+		if arg == "--no-api-test" {
+			testAPI = false
+		} else if arg == "--all" {
+			validateAll = true
+		} else if i == 0 && !strings.HasPrefix(arg, "--") {
+			targetProvider = arg
+		}
+	}
+
+	// Handle validate all
+	if validateAll {
+		if len(config.Providers) == 0 {
+			fmt.Println("No providers configured")
+			return nil
+		}
+
+		fmt.Printf("Validating %d provider(s)...\n\n", len(config.Providers))
+		summary := validateAllProviders(config, testAPI)
+
+		for _, result := range summary.Results {
+			printValidationResult(result)
+		}
+
+		fmt.Println()
+		if summary.Invalid > 0 {
+			fmt.Printf("\033[31m%d/%d\033[0m providers invalid\n", summary.Invalid, summary.Total)
+		} else if summary.Warning > 0 {
+			fmt.Printf("\033[33mAll providers valid (%d with API warnings)\033[0m\n", summary.Warning)
+		} else {
+			fmt.Println("\033[32mAll providers valid\033[0m")
+		}
+
+		// Return error if any provider is invalid
+		if summary.Invalid > 0 {
+			return fmt.Errorf("%d provider(s) invalid", summary.Invalid)
+		}
+		return nil
+	}
+
+	// Determine which provider to validate
+	providerName := targetProvider
+	if providerName == "" {
+		providerName = config.CurrentProvider
+	}
+
+	if providerName == "" {
+		fmt.Println("No current provider set")
+		if len(config.Providers) > 0 {
+			fmt.Println("\nAvailable providers:")
+			for name := range config.Providers {
+				fmt.Printf("  %s\n", name)
+			}
+		}
+		return fmt.Errorf("no provider specified")
+	}
+
+	result := validateProvider(config, providerName, testAPI)
+	printValidationResult(result)
+
+	if !result.Valid {
+		return fmt.Errorf("provider '%s' is invalid", providerName)
+	}
+
+	return nil
+}
+
 // deepCopy creates a deep copy of a map
 func deepCopy(original map[string]interface{}) map[string]interface{} {
 	if original == nil {
@@ -369,6 +641,21 @@ func main() {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		config, err := loadConfig()
 		showHelp(config, err)
+		os.Exit(0)
+	}
+
+	// Handle validate command (needs to be before provider switching logic)
+	if len(args) > 0 && args[0] == "validate" {
+		config, err := loadConfig()
+		if err != nil {
+			showHelp(nil, err)
+			os.Exit(1)
+		}
+		// Pass remaining args to validate (skip "validate")
+		validateArgs := args[1:]
+		if err := runValidation(config, validateArgs); err != nil {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 
