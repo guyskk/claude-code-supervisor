@@ -111,6 +111,23 @@ Create `~/.claude/ccc.json`:
 
 See `./tmp/example/` for more examples.
 
+### Automatic Migration
+
+If you have an existing Claude Code `settings.json` file, `ccc` can automatically migrate it to the new `ccc.json` format on first run.
+
+When you run `ccc` for the first time and `~/.claude/ccc.json` doesn't exist:
+1. `ccc` detects if `~/.claude/settings.json` exists
+2. Prompts you to confirm migration: `Would you like to create ccc config from existing settings? [y/N]`
+3. If you confirm, creates `ccc.json` with:
+   - Your existing settings (permissions, thinking mode, etc.) as the base template
+   - Your API configuration (`env` fields) moved to a `default` provider
+4. Your original `settings.json` is left unchanged
+
+**Migration behavior:**
+- `env` fields from `settings.json` → `providers.default.env`
+- All other fields → `settings` (shared base template)
+- `current_provider` set to `default`
+
 ## Usage
 
 ```bash
