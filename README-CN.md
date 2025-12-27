@@ -12,6 +12,7 @@
 
 - 一条命令切换提供商（Kimi、GLM、MiniMax 等）
 - 自动合并提供商配置
+- 配置验证和 API 连通性测试
 - 透传所有 Claude Code 参数
 - 支持自定义配置目录调试
 - 简洁直观的命令行界面
@@ -123,9 +124,53 @@ ccc
 # 切换到指定提供商
 ccc kimi
 
+# 验证当前提供商配置
+ccc validate
+
+# 验证指定提供商
+ccc validate kimi
+
+# 验证所有提供商
+ccc validate --all
+
+# 跳过 API 连通性测试（仅检查格式）
+ccc validate --no-api-test
+
 # 传递参数给 Claude Code
 ccc kimi --help
 ccc kimi /path/to/project
+```
+
+### 配置验证命令
+
+`ccc validate` 命令帮助您验证提供商配置：
+
+- **检查配置格式**：验证 JSON 语法和必需字段
+- **验证环境变量**：确保 `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN` 存在
+- **测试 API 连通性**：尝试连接提供商的 API 端点
+- **显示详细结果**：彩色输出（绿色=有效，红色=无效，黄色=警告）
+
+示例输出：
+```
+$ ccc validate --all
+Validating 3 provider(s)...
+
+  Valid: kimi
+    Base URL: https://api.moonshot.cn/anthropic
+    Model: kimi-k2-thinking
+    API connection: OK
+
+  Valid: glm
+    Base URL: https://open.bigmodel.cn/api/anthropic
+    Model: glm-4.7
+    API connection: OK
+
+  Warning: m2
+    Base URL: https://api.minimaxi.com/anthropic
+    Model: MiniMax-M2.1
+    API connection: failed: HTTP 503
+
+2/3 providers valid, 1 with API warnings
 ```
 
 ### 环境变量
