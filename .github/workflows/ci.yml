@@ -28,14 +28,6 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        platform:
-          - darwin-amd64
-          - darwin-arm64
-          - linux-amd64
-          - linux-arm64
-          - windows-amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -45,29 +37,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Parse platform
-        id: platform
-        run: |
-          OS=$(echo "${{ matrix.platform }}" | cut -d'-' -f1)
-          ARCH=$(echo "${{ matrix.platform }}" | cut -d'-' -f2)
-          EXT=""
-          if [ "$OS" = "windows" ]; then
-            EXT=".exe"
-          fi
-          echo "os=$OS" >> $GITHUB_OUTPUT
-          echo "arch=$ARCH" >> $GITHUB_OUTPUT
-          echo "ext=$EXT" >> $GITHUB_OUTPUT
-
-      - name: Build
-        run: |
-          CGO_ENABLED=0 GOOS="${{ steps.platform.outputs.os }}" GOARCH="${{ steps.platform.outputs.arch }}" \
-            go build -ldflags="-s -w" -o dist/ccc-${{ matrix.platform }}${{ steps.platform.outputs.ext }} main.go
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ccc-${{ matrix.platform }}
-          path: dist/ccc-${{ matrix.platform }}${{ steps.platform.outputs.ext }}
+      - name: Build all platforms
+        run: ./build.sh --all
 
   test:
     name: Test
