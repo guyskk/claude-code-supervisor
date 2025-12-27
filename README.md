@@ -1,5 +1,7 @@
 # Claude Code Configuration Switcher (ccc)
 
+[阅读中文文档](README-CN.md)
+
 A command-line tool for switching between different Claude Code configurations.
 
 ## Overview
