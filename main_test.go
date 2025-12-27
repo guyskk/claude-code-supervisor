@@ -525,3 +525,453 @@ func TestMigrationFlowErrors(t *testing.T) {
 		}
 	})
 }
+// ========== Provider Management Tests ==========
+
+// TestValidateURL tests URL validation
+func TestValidateURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{"valid https", "https://api.example.com", false},
+		{"valid https with path", "https://api.example.com/v1/anthropic", false},
+		{"invalid http", "http://api.example.com", true},
+		{"invalid no protocol", "api.example.com", true},
+		{"empty string", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateURL(tt.url)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateURL(%q) error = %v, wantErr %v", tt.url, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestValidateProviderName tests provider name validation
+func TestValidateProviderName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"valid lowercase", "kimi", false},
+		{"valid with numbers", "glm4", false},
+		{"valid with hyphens", "mini-max", false},
+		{"valid with underscores", "open_ai", false},
+		{"invalid uppercase", "Kimi", true},
+		{"invalid spaces", "my provider", true},
+		{"invalid special chars", "provider@test", true},
+		{"empty string", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateProviderName(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateProviderName(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestMaskToken tests token masking
+func TestMaskToken(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+		want  string
+	}{
+		{"long token", "sk-abcdefghijk", "sk-***ijk"},
+		{"short token", "sk-ab", "***"},
+		{"empty", "", "***"},
+		{"exact 6 chars", "123456", "***"},
+		{"7 chars", "1234567", "123***567"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := maskToken(tt.token)
+			if got != tt.want {
+				t.Errorf("maskToken(%q) = %q, want %q", tt.token, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestListProviders tests listing providers
+func TestListProviders(t *testing.T) {
+	t.Run("with providers", func(t *testing.T) {
+		tmpDir, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		// Create config with providers
+		config := &Config{
+			CurrentProvider: "kimi",
+			Providers: map[string]map[string]interface{}{
+				"kimi": {
+					"env": map[string]interface{}{
+						"ANTHROPIC_BASE_URL": "https://api.moonshot.cn/anthropic",
+						"ANTHROPIC_MODEL":    "kimi-k2",
+					},
+				},
+				"glm": {
+					"env": map[string]interface{}{
+						"ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+						"ANTHROPIC_MODEL":    "glm-4.7",
+					},
+				},
+			},
+		}
+		writeJSONFile(t, filepath.Join(tmpDir, "ccc.json"), config)
+
+		err := listProviders(config)
+		if err != nil {
+			t.Errorf("listProviders() error = %v", err)
+		}
+	})
+
+	t.Run("no providers", func(t *testing.T) {
+		config := &Config{
+			Providers: map[string]map[string]interface{}{},
+		}
+
+		err := listProviders(config)
+		if err != nil {
+			t.Errorf("listProviders() error = %v", err)
+		}
+	})
+}
+
+// TestAddProvider tests adding providers
+func TestAddProvider(t *testing.T) {
+	t.Run("add with flags (non-interactive)", func(t *testing.T) {
+		tmpDir, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			Settings:        map[string]interface{}{},
+			CurrentProvider: "",
+			Providers:       map[string]map[string]interface{}{},
+		}
+		writeJSONFile(t, filepath.Join(tmpDir, "ccc.json"), config)
+
+		flags := map[string]string{
+			"base-url": "https://api.openai.com/v1",
+			"token":    "sk-test",
+			"model":    "gpt-4",
+		}
+
+		err := addProvider(config, "openai", flags)
+		if err != nil {
+			t.Fatalf("addProvider() error = %v", err)
+		}
+
+		// Verify provider was added
+		if _, exists := config.Providers["openai"]; !exists {
+			t.Error("Provider 'openai' should exist after adding")
+		}
+
+		// Verify config was saved
+		savedConfig := readJSONFile(t, filepath.Join(tmpDir, "ccc.json"))
+		providers := savedConfig["providers"].(map[string]interface{})
+		if _, exists := providers["openai"]; !exists {
+			t.Error("Provider 'openai' should be saved to config file")
+		}
+	})
+
+	t.Run("add with invalid name", func(t *testing.T) {
+		_, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			Providers: map[string]map[string]interface{}{},
+		}
+
+		flags := map[string]string{
+			"base-url": "https://api.example.com",
+			"token":    "sk-test",
+			"model":    "model-1",
+		}
+
+		err := addProvider(config, "Invalid Name", flags)
+		if err == nil {
+			t.Error("addProvider() should fail with invalid provider name")
+		}
+	})
+
+	t.Run("add duplicate provider", func(t *testing.T) {
+		_, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			Providers: map[string]map[string]interface{}{
+				"kimi": {
+					"env": map[string]interface{}{},
+				},
+			},
+		}
+
+		flags := map[string]string{
+			"base-url": "https://api.example.com",
+			"token":    "sk-test",
+			"model":    "model-1",
+		}
+
+		err := addProvider(config, "kimi", flags)
+		if err == nil {
+			t.Error("addProvider() should fail when provider already exists")
+		}
+	})
+
+	t.Run("add with missing flags", func(t *testing.T) {
+		_, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			Providers: map[string]map[string]interface{}{},
+		}
+
+		flags := map[string]string{
+			"base-url": "https://api.example.com",
+			// Missing token and model
+		}
+
+		err := addProvider(config, "test", flags)
+		if err == nil {
+			t.Error("addProvider() should fail with missing required flags")
+		}
+	})
+
+	t.Run("add with invalid base-url", func(t *testing.T) {
+		_, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			Providers: map[string]map[string]interface{}{},
+		}
+
+		flags := map[string]string{
+			"base-url": "http://insecure.com", // Not HTTPS
+			"token":    "sk-test",
+			"model":    "model-1",
+		}
+
+		err := addProvider(config, "test", flags)
+		if err == nil {
+			t.Error("addProvider() should fail with non-HTTPS base-url")
+		}
+	})
+}
+
+// TestRemoveProvider tests removing providers
+func TestRemoveProvider(t *testing.T) {
+	t.Run("remove existing provider", func(t *testing.T) {
+		tmpDir, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			CurrentProvider: "kimi",
+			Providers: map[string]map[string]interface{}{
+				"kimi": {"env": map[string]interface{}{}},
+				"glm":  {"env": map[string]interface{}{}},
+			},
+		}
+		writeJSONFile(t, filepath.Join(tmpDir, "ccc.json"), config)
+
+		err := removeProvider(config, "glm")
+		if err != nil {
+			t.Fatalf("removeProvider() error = %v", err)
+		}
+
+		if _, exists := config.Providers["glm"]; exists {
+			t.Error("Provider 'glm' should be removed")
+		}
+	})
+
+	t.Run("remove nonexistent provider", func(t *testing.T) {
+		_, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			Providers: map[string]map[string]interface{}{
+				"kimi": {"env": map[string]interface{}{}},
+			},
+		}
+
+		err := removeProvider(config, "nonexistent")
+		if err == nil {
+			t.Error("removeProvider() should fail for nonexistent provider")
+		}
+	})
+
+	t.Run("remove current provider", func(t *testing.T) {
+		_, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			CurrentProvider: "kimi",
+			Providers: map[string]map[string]interface{}{
+				"kimi": {"env": map[string]interface{}{}},
+				"glm":  {"env": map[string]interface{}{}},
+			},
+		}
+
+		err := removeProvider(config, "kimi")
+		if err == nil {
+			t.Error("removeProvider() should fail when removing current provider")
+		}
+	})
+
+	t.Run("remove last provider", func(t *testing.T) {
+		_, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			CurrentProvider: "kimi",
+			Providers: map[string]map[string]interface{}{
+				"kimi": {"env": map[string]interface{}{}},
+			},
+		}
+
+		err := removeProvider(config, "kimi")
+		if err == nil {
+			t.Error("removeProvider() should fail when removing the last provider")
+		}
+	})
+}
+
+// TestShowProvider tests showing provider details
+func TestShowProvider(t *testing.T) {
+	t.Run("show existing provider", func(t *testing.T) {
+		_, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			CurrentProvider: "kimi",
+			Providers: map[string]map[string]interface{}{
+				"kimi": {
+					"env": map[string]interface{}{
+						"ANTHROPIC_BASE_URL":   "https://api.moonshot.cn/anthropic",
+						"ANTHROPIC_AUTH_TOKEN": "sk-verylongtoken12345",
+						"ANTHROPIC_MODEL":      "kimi-k2",
+					},
+				},
+			},
+		}
+
+		err := showProvider(config, "kimi")
+		if err != nil {
+			t.Errorf("showProvider() error = %v", err)
+		}
+	})
+
+	t.Run("show nonexistent provider", func(t *testing.T) {
+		_, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			Providers: map[string]map[string]interface{}{
+				"kimi": {"env": map[string]interface{}{}},
+			},
+		}
+
+		err := showProvider(config, "nonexistent")
+		if err == nil {
+			t.Error("showProvider() should fail for nonexistent provider")
+		}
+	})
+}
+
+// TestSetProviderEnv tests setting provider environment variables
+func TestSetProviderEnv(t *testing.T) {
+	t.Run("set existing key", func(t *testing.T) {
+		tmpDir, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			CurrentProvider: "kimi",
+			Settings:        map[string]interface{}{},
+			Providers: map[string]map[string]interface{}{
+				"kimi": {
+					"env": map[string]interface{}{
+						"ANTHROPIC_MODEL": "kimi-k2",
+					},
+				},
+			},
+		}
+		writeJSONFile(t, filepath.Join(tmpDir, "ccc.json"), config)
+
+		err := setProviderEnv(config, "kimi", "ANTHROPIC_MODEL", "kimi-k1.5")
+		if err != nil {
+			t.Fatalf("setProviderEnv() error = %v", err)
+		}
+
+		env := config.Providers["kimi"]["env"].(map[string]interface{})
+		if env["ANTHROPIC_MODEL"] != "kimi-k1.5" {
+			t.Errorf("ANTHROPIC_MODEL = %v, want kimi-k1.5", env["ANTHROPIC_MODEL"])
+		}
+	})
+
+	t.Run("set new key", func(t *testing.T) {
+		tmpDir, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			CurrentProvider: "kimi",
+			Settings:        map[string]interface{}{},
+			Providers: map[string]map[string]interface{}{
+				"kimi": {
+					"env": map[string]interface{}{},
+				},
+			},
+		}
+		writeJSONFile(t, filepath.Join(tmpDir, "ccc.json"), config)
+
+		err := setProviderEnv(config, "kimi", "CUSTOM_VAR", "value123")
+		if err != nil {
+			t.Fatalf("setProviderEnv() error = %v", err)
+		}
+
+		env := config.Providers["kimi"]["env"].(map[string]interface{})
+		if env["CUSTOM_VAR"] != "value123" {
+			t.Errorf("CUSTOM_VAR = %v, want value123", env["CUSTOM_VAR"])
+		}
+	})
+
+	t.Run("set invalid base url", func(t *testing.T) {
+		tmpDir, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			Providers: map[string]map[string]interface{}{
+				"kimi": {
+					"env": map[string]interface{}{},
+				},
+			},
+		}
+		writeJSONFile(t, filepath.Join(tmpDir, "ccc.json"), config)
+
+		err := setProviderEnv(config, "kimi", "ANTHROPIC_BASE_URL", "http://insecure.com")
+		if err == nil {
+			t.Error("setProviderEnv() should fail with non-HTTPS URL")
+		}
+	})
+
+	t.Run("set for nonexistent provider", func(t *testing.T) {
+		_, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		config := &Config{
+			Providers: map[string]map[string]interface{}{},
+		}
+
+		err := setProviderEnv(config, "nonexistent", "KEY", "value")
+		if err == nil {
+			t.Error("setProviderEnv() should fail for nonexistent provider")
+		}
+	})
+}
