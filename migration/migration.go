@@ -61,57 +61,30 @@ func MigrateFromSettings() error {
 
 	// Build new config structure
 	cfg := &config.Config{
-		Settings:        config.Settings{},
+		Settings:        make(map[string]interface{}),
 		CurrentProvider: "default",
-		Providers:       make(map[string]config.ProviderConfig),
+		Providers:       make(map[string]map[string]interface{}),
 	}
 
-	// Extract env from settings
-	var envConfig config.Env
+	// Extract env from settings for the default provider
+	var envMap map[string]interface{}
 	if envVal, exists := oldSettings["env"]; exists {
-		if envMap, ok := envVal.(map[string]interface{}); ok {
-			envConfig = make(config.Env)
-			for k, v := range envMap {
-				if str, ok := v.(string); ok {
-					envConfig[k] = str
-				}
-			}
+		if env, ok := envVal.(map[string]interface{}); ok {
+			envMap = env
 		}
 	}
 
-	// Copy non-env fields to settings
+	// Copy non-env fields to settings (base template)
 	for k, v := range oldSettings {
 		if k != "env" {
-			switch k {
-			case "permissions":
-				if p, ok := v.(map[string]interface{}); ok {
-					cfg.Settings.Permissions = &config.Permissions{}
-					if allow, ok := p["allow"].([]interface{}); ok {
-						for _, a := range allow {
-							if str, ok := a.(string); ok {
-								cfg.Settings.Permissions.Allow = append(cfg.Settings.Permissions.Allow, str)
-							}
-						}
-					}
-					if mode, ok := p["defaultMode"].(string); ok {
-						cfg.Settings.Permissions.DefaultMode = mode
-					}
-				}
-			case "alwaysThinkingEnabled":
-				if b, ok := v.(bool); ok {
-					cfg.Settings.AlwaysThinkingEnabled = b
-				}
-			default:
-				// Copy other fields as-is (they'll be serialized back)
-				// For strict typing, we ignore unknown fields
-			}
+			cfg.Settings[k] = v
 		}
 	}
 
-	// Always create default provider (even if env is empty)
-	defaultProvider := config.ProviderConfig{}
-	if envConfig != nil {
-		defaultProvider.Env = envConfig
+	// Create default provider with env
+	defaultProvider := make(map[string]interface{})
+	if envMap != nil {
+		defaultProvider["env"] = envMap
 	}
 	cfg.Providers["default"] = defaultProvider
 

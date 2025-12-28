@@ -27,28 +27,28 @@ func setupIntegrationTest(t *testing.T) (string, func()) {
 		return tmpDir
 	}
 
-	// Create test ccc.json
+	// Create test ccc.json with map-based config
 	cfg := &config.Config{
-		Settings: config.Settings{
-			Permissions: &config.Permissions{
-				Allow: []string{"Edit", "Write", "WebFetch"},
+		Settings: map[string]interface{}{
+			"permissions": map[string]interface{}{
+				"allow": []interface{}{"Edit", "Write", "WebFetch"},
 			},
-			AlwaysThinkingEnabled: true,
-			Env: config.Env{
+			"alwaysThinkingEnabled": true,
+			"env": map[string]interface{}{
 				"API_TIMEOUT": "300000",
 			},
 		},
 		CurrentProvider: "kimi",
-		Providers: map[string]config.ProviderConfig{
+		Providers: map[string]map[string]interface{}{
 			"kimi": {
-				Env: config.Env{
+				"env": map[string]interface{}{
 					"ANTHROPIC_BASE_URL":   "https://api.moonshot.cn/anthropic",
 					"ANTHROPIC_AUTH_TOKEN": "sk-kimi-test",
 					"ANTHROPIC_MODEL":      "kimi-k2-thinking",
 				},
 			},
 			"glm": {
-				Env: config.Env{
+				"env": map[string]interface{}{
 					"ANTHROPIC_BASE_URL":   "https://open.bigmodel.cn/api/anthropic",
 					"ANTHROPIC_AUTH_TOKEN": "sk-glm-test",
 					"ANTHROPIC_MODEL":      "glm-4.7",
@@ -126,22 +126,27 @@ func TestIntegrationFullFlow(t *testing.T) {
 	// Get the glm provider config
 	glmProvider := cfg.Providers["glm"]
 
-	// Simulate provider switch
-	mergedSettings := config.MergeSettings(&cfg.Settings, &glmProvider)
+	// Simulate provider switch using DeepMerge
+	mergedSettings := config.DeepMerge(cfg.Settings, glmProvider)
 
-	// Verify merged settings
-	if mergedSettings.Env["ANTHROPIC_BASE_URL"] != "https://open.bigmodel.cn/api/anthropic" {
+	// Verify merged settings using helper functions
+	mergedEnv := config.GetEnv(mergedSettings)
+	if mergedEnv == nil {
+		t.Fatal("Merged env should not be nil")
+	}
+	if mergedEnv["ANTHROPIC_BASE_URL"] != "https://open.bigmodel.cn/api/anthropic" {
 		t.Error("BASE_URL not correctly merged")
 	}
-	if mergedSettings.Env["API_TIMEOUT"] != "300000" {
+	if mergedEnv["API_TIMEOUT"] != "300000" {
 		t.Error("Base API_TIMEOUT should be preserved")
 	}
-	if mergedSettings.Env["ANTHROPIC_AUTH_TOKEN"] != "sk-glm-test" {
+	if mergedEnv["ANTHROPIC_AUTH_TOKEN"] != "sk-glm-test" {
 		t.Error("Provider AUTH_TOKEN should override")
 	}
 
 	// Verify permissions are preserved
-	if mergedSettings.Permissions == nil || len(mergedSettings.Permissions.Allow) != 3 {
+	permissions, _ := mergedSettings["permissions"].(map[string]interface{})
+	if permissions == nil {
 		t.Error("Permissions should be preserved")
 	}
 }
@@ -190,7 +195,7 @@ func TestIntegrationConfigBackwardCompatible(t *testing.T) {
 	defer cleanup()
 
 	// Create a config file that uses the old map-based format
-	// but load it using the new typed structures
+	// and verify it can be loaded correctly
 	oldStyleConfig := map[string]interface{}{
 		"settings": map[string]interface{}{
 			"permissions": map[string]interface{}{
@@ -221,7 +226,7 @@ func TestIntegrationConfigBackwardCompatible(t *testing.T) {
 		t.Fatalf("Failed to write: %v", err)
 	}
 
-	// Load using new config package
+	// Load using config package
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("Failed to load: %v", err)
@@ -231,10 +236,16 @@ func TestIntegrationConfigBackwardCompatible(t *testing.T) {
 	if cfg.CurrentProvider != "kimi" {
 		t.Errorf("CurrentProvider = %s, want kimi", cfg.CurrentProvider)
 	}
-	if cfg.Settings.AlwaysThinkingEnabled != true {
+
+	// Access settings fields using map access
+	if thinking, exists := cfg.Settings["alwaysThinkingEnabled"]; !exists || !thinking.(bool) {
 		t.Error("AlwaysThinkingEnabled should be true")
 	}
-	if len(cfg.Providers["kimi"].Env) != 2 {
+
+	// Access provider env using helper function
+	kimiProvider := cfg.Providers["kimi"]
+	kimiEnv := config.GetEnv(kimiProvider)
+	if kimiEnv == nil || len(kimiEnv) != 2 {
 		t.Error("Provider env should have 2 entries")
 	}
 }

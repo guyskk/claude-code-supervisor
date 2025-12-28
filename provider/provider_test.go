@@ -14,17 +14,17 @@ func setupTestConfig(t *testing.T) *config.Config {
 	t.Helper()
 
 	return &config.Config{
-		Settings: config.Settings{
-			AlwaysThinkingEnabled: true,
-			Env: config.Env{
+		Settings: map[string]interface{}{
+			"alwaysThinkingEnabled": true,
+			"env": map[string]interface{}{
 				"API_TIMEOUT":       "30000",
 				"DISABLE_TELEMETRY": "1",
 			},
 		},
 		CurrentProvider: "kimi",
-		Providers: map[string]config.ProviderConfig{
+		Providers: map[string]map[string]interface{}{
 			"kimi": {
-				Env: config.Env{
+				"env": map[string]interface{}{
 					"ANTHROPIC_BASE_URL":         "https://api.moonshot.cn/anthropic",
 					"ANTHROPIC_AUTH_TOKEN":       "sk-kimi-xxx",
 					"ANTHROPIC_MODEL":            "kimi-k2-thinking",
@@ -32,7 +32,7 @@ func setupTestConfig(t *testing.T) *config.Config {
 				},
 			},
 			"glm": {
-				Env: config.Env{
+				"env": map[string]interface{}{
 					"ANTHROPIC_BASE_URL":   "https://open.bigmodel.cn/api/anthropic",
 					"ANTHROPIC_AUTH_TOKEN": "sk-glm-xxx",
 					"ANTHROPIC_MODEL":      "glm-4.7",
@@ -78,12 +78,13 @@ func TestSwitch(t *testing.T) {
 		}
 
 		// Verify merged settings
-		if settings.Env["ANTHROPIC_BASE_URL"] != "https://open.bigmodel.cn/api/anthropic" {
-			t.Errorf("BASE_URL = %s, want glm URL", settings.Env["ANTHROPIC_BASE_URL"])
+		env := config.GetEnv(settings)
+		if env["ANTHROPIC_BASE_URL"] != "https://open.bigmodel.cn/api/anthropic" {
+			t.Errorf("BASE_URL = %v, want glm URL", env["ANTHROPIC_BASE_URL"])
 		}
 		// Base env should be preserved
-		if settings.Env["API_TIMEOUT"] != "30000" {
-			t.Errorf("API_TIMEOUT = %s, want 30000", settings.Env["API_TIMEOUT"])
+		if env["API_TIMEOUT"] != "30000" {
+			t.Errorf("API_TIMEOUT = %v, want 30000", env["API_TIMEOUT"])
 		}
 
 		// Verify current_provider updated
@@ -93,7 +94,7 @@ func TestSwitch(t *testing.T) {
 
 		// Verify settings file was created
 		settingsPath := config.GetSettingsPath("glm")
-		if _, err := os.Stat(settingsPath); err != nil {
+		if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
 			t.Errorf("Settings file should exist at %s", settingsPath)
 		}
 	})
@@ -124,13 +125,13 @@ func TestSwitch(t *testing.T) {
 func TestGetAuthToken(t *testing.T) {
 	tests := []struct {
 		name     string
-		settings *config.Settings
+		settings map[string]interface{}
 		want     string
 	}{
 		{
 			name: "token exists",
-			settings: &config.Settings{
-				Env: config.Env{
+			settings: map[string]interface{}{
+				"env": map[string]interface{}{
 					"ANTHROPIC_AUTH_TOKEN": "sk-xxx",
 				},
 			},
@@ -138,7 +139,7 @@ func TestGetAuthToken(t *testing.T) {
 		},
 		{
 			name:     "token does not exist",
-			settings: &config.Settings{},
+			settings: map[string]interface{}{},
 			want:     "PLEASE_SET_ANTHROPIC_AUTH_TOKEN",
 		},
 		{
@@ -148,8 +149,8 @@ func TestGetAuthToken(t *testing.T) {
 		},
 		{
 			name: "token is empty string",
-			settings: &config.Settings{
-				Env: config.Env{
+			settings: map[string]interface{}{
+				"env": map[string]interface{}{
 					"ANTHROPIC_AUTH_TOKEN": "",
 				},
 			},
@@ -217,7 +218,7 @@ func TestListProviders(t *testing.T) {
 
 	t.Run("empty providers", func(t *testing.T) {
 		cfg := &config.Config{
-			Providers: map[string]config.ProviderConfig{},
+			Providers: map[string]map[string]interface{}{},
 		}
 		providers := ListProviders(cfg)
 		if len(providers) != 0 {
@@ -275,7 +276,7 @@ func TestGetDefaultProvider(t *testing.T) {
 
 	t.Run("empty providers", func(t *testing.T) {
 		cfg := &config.Config{
-			Providers: map[string]config.ProviderConfig{},
+			Providers: map[string]map[string]interface{}{},
 		}
 		provider := GetDefaultProvider(cfg)
 		if provider != "" {
@@ -366,6 +367,70 @@ func TestShortenError(t *testing.T) {
 				if !strings.Contains(got, tt.wantContains) {
 					t.Errorf("ShortenError() = %s, should contain %s", got, tt.wantContains)
 				}
+			}
+		})
+	}
+}
+
+func TestGetBaseURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings map[string]interface{}
+		want     string
+	}{
+		{
+			name: "base url exists",
+			settings: map[string]interface{}{
+				"env": map[string]interface{}{
+					"ANTHROPIC_BASE_URL": "https://api.example.com",
+				},
+			},
+			want: "https://api.example.com",
+		},
+		{
+			name:     "base url does not exist",
+			settings: map[string]interface{}{},
+			want:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetBaseURL(tt.settings)
+			if got != tt.want {
+				t.Errorf("GetBaseURL() = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetModel(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings map[string]interface{}
+		want     string
+	}{
+		{
+			name: "model exists",
+			settings: map[string]interface{}{
+				"env": map[string]interface{}{
+					"ANTHROPIC_MODEL": "claude-3",
+				},
+			},
+			want: "claude-3",
+		},
+		{
+			name:     "model does not exist",
+			settings: map[string]interface{}{},
+			want:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetModel(tt.settings)
+			if got != tt.want {
+				t.Errorf("GetModel() = %s, want %s", got, tt.want)
 			}
 		})
 	}

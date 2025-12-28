@@ -1,4 +1,5 @@
-// Package config provides type-safe configuration management for ccc.
+// Package config provides configuration management for ccc.
+// Claude settings use dynamic map[string]interface{} to handle arbitrary fields.
 package config
 
 import (
@@ -27,32 +28,12 @@ func GetDir() string {
 	return GetDirFunc()
 }
 
-// Env represents environment variables configuration.
-type Env map[string]string
-
-// Permissions represents Claude's permissions configuration.
-type Permissions struct {
-	Allow       []string `json:"allow,omitempty"`
-	DefaultMode string   `json:"defaultMode,omitempty"`
-}
-
-// Settings represents Claude's settings configuration.
-type Settings struct {
-	Permissions           *Permissions `json:"permissions,omitempty"`
-	AlwaysThinkingEnabled bool         `json:"alwaysThinkingEnabled,omitempty"`
-	Env                   Env          `json:"env,omitempty"`
-}
-
-// ProviderConfig represents a single provider's configuration.
-type ProviderConfig struct {
-	Env Env `json:"env,omitempty"`
-}
-
 // Config represents the ccc.json configuration structure.
+// Settings and Providers use dynamic maps to handle arbitrary Claude settings fields.
 type Config struct {
-	Settings        Settings                  `json:"settings"`
-	CurrentProvider string                    `json:"current_provider"`
-	Providers       map[string]ProviderConfig `json:"providers"`
+	Settings        map[string]interface{}            `json:"settings"`
+	CurrentProvider string                            `json:"current_provider"`
+	Providers       map[string]map[string]interface{} `json:"providers"`
 }
 
 // GetConfigPath returns the path to ccc.json.
@@ -108,7 +89,7 @@ func Save(cfg *Config) error {
 }
 
 // SaveSettings writes the settings to a provider-specific settings file.
-func SaveSettings(settings *Settings, providerName string) error {
+func SaveSettings(settings map[string]interface{}, providerName string) error {
 	settingsPath := GetSettingsPath(providerName)
 
 	// Ensure settings directory exists
@@ -129,71 +110,96 @@ func SaveSettings(settings *Settings, providerName string) error {
 	return nil
 }
 
-// Merge merges two Env maps, with env2 taking precedence for conflicting keys.
-func MergeEnv(env1, env2 Env) Env {
-	result := make(Env)
-	for k, v := range env1 {
-		result[k] = v
-	}
-	for k, v := range env2 {
-		result[k] = v
-	}
-	return result
-}
-
-// MergePermissions merges two Permissions, with p2 taking precedence.
-func MergePermissions(p1, p2 *Permissions) *Permissions {
-	if p1 == nil && p2 == nil {
+// deepCopy creates a deep copy of a map[string]interface{}.
+func deepCopy(original map[string]interface{}) map[string]interface{} {
+	if original == nil {
 		return nil
 	}
-	if p2 == nil {
-		return p1
+
+	copied := make(map[string]interface{})
+	for k, v := range original {
+		if nestedMap, ok := v.(map[string]interface{}); ok {
+			copied[k] = deepCopy(nestedMap)
+		} else {
+			copied[k] = v
+		}
 	}
-	if p1 == nil {
-		return p2
+	return copied
+}
+
+// DeepMerge recursively merges provider settings into base settings.
+// Provider settings override base settings for the same keys.
+// This function handles arbitrary Claude settings fields.
+func DeepMerge(base, provider map[string]interface{}) map[string]interface{} {
+	result := deepCopy(base)
+	if result == nil {
+		result = make(map[string]interface{})
 	}
 
-	result := &Permissions{
-		Allow:       p1.Allow,
-		DefaultMode: p1.DefaultMode,
+	for key, value := range provider {
+		if existingVal, exists := result[key]; exists {
+			// If both are maps, merge them recursively
+			if existingMap, ok := existingVal.(map[string]interface{}); ok {
+				if newMap, ok := value.(map[string]interface{}); ok {
+					result[key] = DeepMerge(existingMap, newMap)
+					continue
+				}
+			}
+		}
+		// Otherwise, override with provider value
+		result[key] = value
 	}
-	if p2.Allow != nil {
-		result.Allow = p2.Allow
-	}
-	if p2.DefaultMode != "" {
-		result.DefaultMode = p2.DefaultMode
-	}
+
 	return result
 }
 
-// MergeSettings merges base settings with provider settings, provider takes precedence.
-func MergeSettings(base *Settings, provider *ProviderConfig) *Settings {
-	if base == nil {
-		base = &Settings{}
+// GetEnv extracts the env map from settings.
+// Returns nil if env doesn't exist or is not a map.
+func GetEnv(settings map[string]interface{}) map[string]interface{} {
+	if settings == nil {
+		return nil
 	}
-
-	result := &Settings{
-		AlwaysThinkingEnabled: base.AlwaysThinkingEnabled,
-		Permissions:           base.Permissions,
-		Env:                   make(Env),
-	}
-
-	// Copy base env
-	for k, v := range base.Env {
-		result.Env[k] = v
-	}
-
-	// Merge provider env if present
-	if provider != nil && provider.Env != nil {
-		for k, v := range provider.Env {
-			result.Env[k] = v
+	if envVal, exists := settings["env"]; exists {
+		if envMap, ok := envVal.(map[string]interface{}); ok {
+			return envMap
 		}
 	}
+	return nil
+}
 
-	// Handle nil env
-	if len(result.Env) == 0 {
-		result.Env = nil
+// GetEnvString extracts a string value from settings.env.
+// Returns defaultValue if the key doesn't exist.
+func GetEnvString(settings map[string]interface{}, key, defaultValue string) string {
+	env := GetEnv(settings)
+	if env == nil {
+		return defaultValue
 	}
+	if val, exists := env[key]; exists {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return defaultValue
+}
 
-	return result
+// GetAuthToken extracts the ANTHROPIC_AUTH_TOKEN from settings.
+// Returns a placeholder if the token is not set.
+func GetAuthToken(settings map[string]interface{}) string {
+	token := GetEnvString(settings, "ANTHROPIC_AUTH_TOKEN", "")
+	if token == "" {
+		return "PLEASE_SET_ANTHROPIC_AUTH_TOKEN"
+	}
+	return token
+}
+
+// GetBaseURL extracts the ANTHROPIC_BASE_URL from settings.
+// Returns empty string if not set.
+func GetBaseURL(settings map[string]interface{}) string {
+	return GetEnvString(settings, "ANTHROPIC_BASE_URL", "")
+}
+
+// GetModel extracts the ANTHROPIC_MODEL from settings.
+// Returns empty string if not set.
+func GetModel(settings map[string]interface{}) string {
+	return GetEnvString(settings, "ANTHROPIC_MODEL", "")
 }

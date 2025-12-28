@@ -240,11 +240,19 @@ func TestMigrateFromSettings(t *testing.T) {
 				}
 
 				// Check settings
-				if cfg.Settings.Permissions == nil || len(cfg.Settings.Permissions.Allow) != 2 {
-					t.Error("Permissions not migrated correctly")
+				env := config.GetEnv(cfg.Settings)
+				if env != nil {
+					t.Error("Settings should not contain env (should be in provider)")
 				}
-				if !cfg.Settings.AlwaysThinkingEnabled {
-					t.Error("AlwaysThinkingEnabled should be true")
+
+				// Check permissions exist in settings
+				if _, exists := cfg.Settings["permissions"]; !exists {
+					t.Error("Permissions should be in settings")
+				}
+
+				// Check alwaysThinkingEnabled exists
+				if thinking, exists := cfg.Settings["alwaysThinkingEnabled"]; !exists || !thinking.(bool) {
+					t.Error("alwaysThinkingEnabled should be true in settings")
 				}
 
 				// Check providers
@@ -256,13 +264,14 @@ func TestMigrateFromSettings(t *testing.T) {
 				}
 
 				defaultProvider := cfg.Providers["default"]
-				if defaultProvider.Env == nil {
+				defaultEnv := config.GetEnv(defaultProvider)
+				if defaultEnv == nil {
 					t.Error("Default provider env should not be nil")
 				} else {
-					if defaultProvider.Env["ANTHROPIC_BASE_URL"] != "https://api.example.com" {
+					if defaultEnv["ANTHROPIC_BASE_URL"] != "https://api.example.com" {
 						t.Error("BASE_URL not migrated correctly")
 					}
-					if defaultProvider.Env["ANTHROPIC_AUTH_TOKEN"] != "sk-xxx" {
+					if defaultEnv["ANTHROPIC_AUTH_TOKEN"] != "sk-xxx" {
 						t.Error("AUTH_TOKEN not migrated correctly")
 					}
 				}

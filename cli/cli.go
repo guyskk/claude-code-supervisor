@@ -185,7 +185,7 @@ func determineProvider(cmd *Command, cfg *config.Config) string {
 }
 
 // runClaude executes the claude command with the settings file.
-func runClaude(providerName string, settings *config.Settings, args []string) error {
+func runClaude(providerName string, settings map[string]interface{}, args []string) error {
 	settingsPath := config.GetSettingsPath(providerName)
 
 	// Extract ANTHROPIC_AUTH_TOKEN from env

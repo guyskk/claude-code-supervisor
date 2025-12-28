@@ -10,19 +10,20 @@ import (
 
 // Switch switches to the specified provider by merging configurations.
 // It saves the merged settings and updates the current provider in ccc.json.
-func Switch(cfg *config.Config, providerName string) (*config.Settings, error) {
+func Switch(cfg *config.Config, providerName string) (map[string]interface{}, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
 
 	// Check if provider exists
-	providerCfg, exists := cfg.Providers[providerName]
+	providerSettings, exists := cfg.Providers[providerName]
 	if !exists {
 		return nil, fmt.Errorf("provider '%s' not found in configuration", providerName)
 	}
 
-	// Merge base settings with provider settings
-	mergedSettings := config.MergeSettings(&cfg.Settings, &providerCfg)
+	// Create the merged settings
+	// Start with the base settings template
+	mergedSettings := config.DeepMerge(cfg.Settings, providerSettings)
 
 	// Save the merged settings to settings-{provider}.json
 	if err := config.SaveSettings(mergedSettings, providerName); err != nil {
@@ -36,18 +37,6 @@ func Switch(cfg *config.Config, providerName string) (*config.Settings, error) {
 	}
 
 	return mergedSettings, nil
-}
-
-// GetAuthToken extracts the ANTHROPIC_AUTH_TOKEN from settings.
-// If the token is not set, returns a placeholder string.
-func GetAuthToken(settings *config.Settings) string {
-	if settings == nil || settings.Env == nil {
-		return "PLEASE_SET_ANTHROPIC_AUTH_TOKEN"
-	}
-	if token, exists := settings.Env["ANTHROPIC_AUTH_TOKEN"]; exists && token != "" {
-		return token
-	}
-	return "PLEASE_SET_ANTHROPIC_AUTH_TOKEN"
 }
 
 // FormatProviderName formats a provider name for display.
@@ -129,4 +118,22 @@ func ShortenError(err error, maxLength int) string {
 		errMsg = errMsg[:maxLength-3] + "..."
 	}
 	return errMsg
+}
+
+// GetAuthToken extracts the ANTHROPIC_AUTH_TOKEN from merged settings.
+// This is a convenience wrapper around config.GetAuthToken.
+func GetAuthToken(settings map[string]interface{}) string {
+	return config.GetAuthToken(settings)
+}
+
+// GetBaseURL extracts the ANTHROPIC_BASE_URL from merged settings.
+// This is a convenience wrapper around config.GetBaseURL.
+func GetBaseURL(settings map[string]interface{}) string {
+	return config.GetBaseURL(settings)
+}
+
+// GetModel extracts the ANTHROPIC_MODEL from merged settings.
+// This is a convenience wrapper around config.GetModel.
+func GetModel(settings map[string]interface{}) string {
+	return config.GetModel(settings)
 }

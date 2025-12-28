@@ -115,7 +115,7 @@ func TestShowHelp(t *testing.T) {
 
 		cfg := &config.Config{
 			CurrentProvider: "kimi",
-			Providers: map[string]config.ProviderConfig{
+			Providers: map[string]map[string]interface{}{
 				"kimi": {},
 				"glm":  {},
 			},
@@ -144,7 +144,7 @@ func TestShowHelp(t *testing.T) {
 func TestDetermineProvider(t *testing.T) {
 	cfg := &config.Config{
 		CurrentProvider: "kimi",
-		Providers: map[string]config.ProviderConfig{
+		Providers: map[string]map[string]interface{}{
 			"kimi": {},
 			"glm":  {},
 		},
@@ -197,7 +197,7 @@ func TestDetermineProvider(t *testing.T) {
 	t.Run("invalid provider and no current", func(t *testing.T) {
 		cfg := &config.Config{
 			CurrentProvider: "",
-			Providers: map[string]config.ProviderConfig{
+			Providers: map[string]map[string]interface{}{
 				"kimi": {},
 			},
 		}
@@ -212,7 +212,7 @@ func TestDetermineProvider(t *testing.T) {
 	t.Run("no providers configured", func(t *testing.T) {
 		cfg := &config.Config{
 			CurrentProvider: "",
-			Providers:       map[string]config.ProviderConfig{},
+			Providers:       map[string]map[string]interface{}{},
 		}
 
 		cmd := &Command{Provider: ""}
