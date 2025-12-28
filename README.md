@@ -12,6 +12,7 @@
 
 - One-command switching between providers (Kimi, GLM, MiniMax, and more)
 - Automatic provider configuration merging
+- Configuration validation with API connectivity testing
 - Pass-through of all Claude Code arguments
 - Debug mode with custom config directories
 - Clean, intuitive CLI interface
@@ -140,9 +141,53 @@ ccc
 # Switch to a provider
 ccc kimi
 
+# Validate current provider configuration
+ccc validate
+
+# Validate a specific provider
+ccc validate kimi
+
+# Validate all providers
+ccc validate --all
+
+# Skip API connectivity test (format check only)
+ccc validate --no-api-test
+
 # Pass arguments to Claude Code
 ccc kimi --help
 ccc kimi /path/to/project
+```
+
+### Validation Command
+
+The `ccc validate` command helps you verify your provider configurations:
+
+- **Checks configuration format**: Validates JSON syntax and required fields
+- **Validates environment variables**: Ensures `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` are present
+- **Tests API connectivity**: Attempts a connection to the provider's API endpoint
+- **Shows detailed results**: Color-coded output (green=valid, red=invalid, yellow=warning)
+
+Example output:
+```
+$ ccc validate --all
+Validating 3 provider(s)...
+
+  Valid: kimi
+    Base URL: https://api.moonshot.cn/anthropic
+    Model: kimi-k2-thinking
+    API connection: OK
+
+  Valid: glm
+    Base URL: https://open.bigmodel.cn/api/anthropic
+    Model: glm-4.7
+    API connection: OK
+
+  Warning: m2
+    Base URL: https://api.minimaxi.com/anthropic
+    Model: MiniMax-M2.1
+    API connection: failed: HTTP 503
+
+2/3 providers valid, 1 with API warnings
 ```
 
 ### Environment Variables

@@ -10,6 +10,7 @@ import (
 	"github.com/guyskk/ccc/internal/config"
 	"github.com/guyskk/ccc/internal/migration"
 	"github.com/guyskk/ccc/internal/provider"
+	"github.com/guyskk/ccc/internal/validate"
 )
 
 // Name is the project name.
@@ -27,6 +28,17 @@ type Command struct {
 	Help       bool
 	Provider   string
 	ClaudeArgs []string
+
+	// Validate command options
+	Validate     bool
+	ValidateOpts *ValidateCommand
+}
+
+// ValidateCommand represents options for the validate command.
+type ValidateCommand struct {
+	Provider    string // Empty means current provider
+	ValidateAll bool
+	TestAPI     bool
 }
 
 // Parse parses command-line arguments.
@@ -42,8 +54,13 @@ func Parse(args []string) *Command {
 			cmd.Help = true
 			return cmd
 		}
-		// First non-flag argument might be a provider name
+		// First non-flag argument might be a provider name or validate command
 		if i == 0 && !strings.HasPrefix(arg, "-") {
+			if arg == "validate" {
+				cmd.Validate = true
+				cmd.ValidateOpts = parseValidateArgs(args[1:])
+				return cmd
+			}
 			cmd.Provider = arg
 			cmd.ClaudeArgs = args[1:]
 			return cmd
@@ -54,17 +71,44 @@ func Parse(args []string) *Command {
 	return cmd
 }
 
+// parseValidateArgs parses arguments for the validate command.
+func parseValidateArgs(args []string) *ValidateCommand {
+	opts := &ValidateCommand{
+		TestAPI: true, // Default is to test API
+	}
+
+	for i, arg := range args {
+		if arg == "--all" {
+			opts.ValidateAll = true
+		} else if arg == "--no-api-test" {
+			opts.TestAPI = false
+		} else if !strings.HasPrefix(arg, "--") && i == 0 {
+			// First non-flag argument is the provider name
+			opts.Provider = arg
+		}
+	}
+
+	return opts
+}
+
 // ShowHelp displays usage information.
 func ShowHelp(cfg *config.Config, cfgErr error) {
 	help := `Usage: ccc [provider] [args...]
+       ccc validate [provider] [--all] [--no-api-test]
 
 Claude Code Configuration Switcher
 
 Commands:
   ccc              Use the current provider (or the first provider if none is set)
   ccc <provider>   Switch to the specified provider and run Claude Code
+  ccc validate     Validate the current provider configuration
+  ccc validate <provider>   Validate a specific provider configuration
+  ccc validate --all        Validate all provider configurations
   ccc --help       Show this help message
   ccc --version    Show version information
+
+Validation Options:
+  --no-api-test    Skip API connectivity test (only check config format)
 
 Environment Variables:
   CCC_CONFIG_DIR     Override the configuration directory (default: ~/.claude/)
@@ -114,6 +158,29 @@ func Run(cmd *Command) error {
 		return nil
 	}
 
+	// Handle validate command (needs config but doesn't run claude)
+	if cmd.Validate {
+		cfg, err := config.Load()
+		if err != nil {
+			// Try to migrate from existing settings.json
+			if migration.CheckExisting() && migration.PromptUser() {
+				if err := migration.MigrateFromSettings(); err != nil {
+					return fmt.Errorf("error migrating from settings: %w", err)
+				}
+				// Reload config after migration
+				cfg, err = config.Load()
+				if err != nil {
+					ShowHelp(nil, err)
+					return err
+				}
+			} else {
+				ShowHelp(nil, err)
+				return err
+			}
+		}
+		return runValidate(cfg, cmd.ValidateOpts)
+	}
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -153,6 +220,33 @@ func Run(cmd *Command) error {
 	}
 
 	return nil
+}
+
+// runValidate executes the validate command.
+func runValidate(cfg *config.Config, opts *ValidateCommand) error {
+	// Create a config adapter for the validate package
+	cfgAdapter := &configAdapter{cfg: cfg}
+
+	validateOpts := &validate.RunOptions{
+		Provider:    opts.Provider,
+		ValidateAll: opts.ValidateAll,
+		TestAPI:     opts.TestAPI,
+	}
+
+	return validate.Run(cfgAdapter, validateOpts)
+}
+
+// configAdapter adapts config.Config to the validate.Config interface.
+type configAdapter struct {
+	cfg *config.Config
+}
+
+func (a *configAdapter) Providers() map[string]map[string]interface{} {
+	return a.cfg.Providers
+}
+
+func (a *configAdapter) CurrentProvider() string {
+	return a.cfg.CurrentProvider
 }
 
 // determineProvider determines which provider to use based on the command and config.
