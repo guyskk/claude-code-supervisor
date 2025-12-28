@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/ccc/config"
+	"github.com/user/ccc/internal/config"
 )
 
 // setupTestDir creates a temporary directory for testing.

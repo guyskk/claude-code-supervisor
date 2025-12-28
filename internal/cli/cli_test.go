@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/user/ccc/config"
+	"github.com/user/ccc/internal/config"
 )
 
 func setupTestDir(t *testing.T) func() {
