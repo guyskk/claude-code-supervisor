@@ -291,19 +291,20 @@ func deepMerge(base, provider map[string]interface{}) map[string]interface{} {
 }
 
 // switchProvider switches to the specified provider by merging configurations
-func switchProvider(providerName string) error {
+// Returns the merged settings for use by runClaude
+func switchProvider(providerName string) (map[string]interface{}, error) {
 	fmt.Printf("Launching with provider: %s\n", providerName)
 
 	// Load the configuration
 	config, err := loadConfig()
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Check if provider exists
 	providerSettings, exists := config.Providers[providerName]
 	if !exists {
-		return fmt.Errorf("provider '%s' not found in configuration", providerName)
+		return nil, fmt.Errorf("provider '%s' not found in configuration", providerName)
 	}
 
 	// Create the merged settings
@@ -318,29 +319,39 @@ func switchProvider(providerName string) error {
 
 	// Save the merged settings to settings-{provider}.json
 	if err := saveSettings(mergedSettings, providerName); err != nil {
-		return fmt.Errorf("failed to save settings: %w", err)
+		return nil, fmt.Errorf("failed to save settings: %w", err)
 	}
 
 	// Update current_provider in ccc.json
 	config.CurrentProvider = providerName
 	if err := saveConfig(config); err != nil {
-		return fmt.Errorf("failed to update current provider: %w", err)
+		return nil, fmt.Errorf("failed to update current provider: %w", err)
 	}
 
-	return nil
+	return mergedSettings, nil
 }
 
 // runClaude executes the claude command with the settings file
-func runClaude(providerName string, args []string) error {
+func runClaude(providerName string, mergedSettings map[string]interface{}, args []string) error {
 	settingsPath := getSettingsPath(providerName)
 
-	// Check if settings file exists
-	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
-		return fmt.Errorf("settings file not found: %s. Please run 'ccc <provider>' first", settingsPath)
+	// Extract ANTHROPIC_AUTH_TOKEN from env
+	authToken := "PLEASE_SET_ANTHROPIC_AUTH_TOKEN"
+	if envVal, exists := mergedSettings["env"]; exists {
+		if envMap, ok := envVal.(map[string]interface{}); ok {
+			if tokenVal, exists := envMap["ANTHROPIC_AUTH_TOKEN"]; exists {
+				if tokenStr, ok := tokenVal.(string); ok && tokenStr != "" {
+					authToken = tokenStr
+				}
+			}
+		}
 	}
 
 	// Build the claude command
 	cmd := exec.Command("claude", append([]string{"--settings", settingsPath}, args...)...)
+
+	// Set up environment variables
+	cmd.Env = append(os.Environ(), fmt.Sprintf("ANTHROPIC_AUTH_TOKEN=%s", authToken))
 
 	// Set up stdin, stdout, stderr
 	cmd.Stdin = os.Stdin
@@ -435,13 +446,14 @@ func main() {
 	}
 
 	// Switch to the provider (this will merge and save settings)
-	if err := switchProvider(providerName); err != nil {
+	mergedSettings, err := switchProvider(providerName)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error switching provider: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Run claude with the settings file
-	if err := runClaude(providerName, claudeArgs); err != nil {
+	if err := runClaude(providerName, mergedSettings, claudeArgs); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running claude: %v\n", err)
 		os.Exit(1)
 	}
