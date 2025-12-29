@@ -545,8 +545,6 @@ func TestIsAPIStatusOK(t *testing.T) {
 		want   bool
 	}{
 		{"simple ok", "ok", true},
-		{"ok with note", "ok (token valid, messages endpoint restricted)", true},
-		{"ok with other note", "ok (some other note)", true},
 		{"http error", "HTTP 401: Unauthorized", false},
 		{"failed", "failed: connection refused", false},
 		{"empty string", "", false},
@@ -570,7 +568,6 @@ func TestFormatAPIStatus(t *testing.T) {
 		wantColor string
 	}{
 		{"simple ok", "ok", "OK", "\033[32m"},
-		{"ok with note", "ok (token valid, messages endpoint restricted)", "OK (token valid, messages endpoint restricted)", "\033[32m"},
 		{"http error", "HTTP 401", "HTTP 401", "\033[33m"},
 	}
 

@@ -323,13 +323,13 @@ func testModelsEndpoint(baseURL, authToken string) string {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		// Successfully validated - token is valid and API is accessible
+		return "ok"
+	}
+
 	buf, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
 	respStr := strings.TrimSpace(string(buf))
-
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		// Token is valid, but provider has strict access control for messages
-		return "ok (token valid, messages endpoint restricted)"
-	}
 
 	if respStr != "" {
 		return fmt.Sprintf("HTTP %d (models): %s", resp.StatusCode, respStr)
@@ -399,17 +399,13 @@ func PrintResult(result *ValidationResult) {
 
 // isAPIStatusOK checks if the API status indicates a successful validation.
 func isAPIStatusOK(status string) bool {
-	return status == "ok" || strings.HasPrefix(status, "ok (")
+	return status == "ok"
 }
 
 // formatAPIStatus formats the API status for display, returning the display text and color.
 func formatAPIStatus(status string) (string, string) {
-	if isAPIStatusOK(status) {
-		if status == "ok" {
-			return "OK", "\033[32m"
-		}
-		// For "ok (token valid, messages endpoint restricted)", show as OK with note
-		return "OK " + strings.TrimPrefix(status, "ok "), "\033[32m"
+	if status == "ok" {
+		return "OK", "\033[32m"
 	}
 	return status, "\033[33m"
 }
