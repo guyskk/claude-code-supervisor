@@ -537,6 +537,56 @@ func TestTestAPIConnection(t *testing.T) {
 	})
 }
 
+// Test isAPIStatusOK function
+func TestIsAPIStatusOK(t *testing.T) {
+	tests := []struct {
+		name   string
+		status string
+		want   bool
+	}{
+		{"simple ok", "ok", true},
+		{"ok with note", "ok (token valid, messages endpoint restricted)", true},
+		{"ok with other note", "ok (some other note)", true},
+		{"http error", "HTTP 401: Unauthorized", false},
+		{"failed", "failed: connection refused", false},
+		{"empty string", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isAPIStatusOK(tt.status); got != tt.want {
+				t.Errorf("isAPIStatusOK() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// Test formatAPIStatus function
+func TestFormatAPIStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		status    string
+		wantText  string
+		wantColor string
+	}{
+		{"simple ok", "ok", "OK", "\033[32m"},
+		{"ok with note", "ok (token valid, messages endpoint restricted)", "OK (token valid, messages endpoint restricted)", "\033[32m"},
+		{"http error", "HTTP 401", "HTTP 401", "\033[33m"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text, color := formatAPIStatus(tt.status)
+			if text != tt.wantText {
+				t.Errorf("formatAPIStatus() text = %q, want %q", text, tt.wantText)
+			}
+			if color != tt.wantColor {
+				t.Errorf("formatAPIStatus() color = %q, want %q", color, tt.wantColor)
+			}
+		})
+	}
+}
+
 // Example mockConfig helper function for tests
 func newMockConfig(providers map[string]map[string]interface{}, current string) *mockConfig {
 	return &mockConfig{

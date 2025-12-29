@@ -123,6 +123,7 @@ func ValidateProvider(cfg Config, providerName string) *ValidationResult {
 }
 
 // testAPIConnection tests if the API endpoint is reachable using a minimal request.
+// First tries /v1/messages endpoint, falls back to /v1/models for providers with strict access control.
 func testAPIConnection(baseURL, authToken, model string) string {
 	client := &http.Client{
 		Timeout: 8 * time.Second,
@@ -133,13 +134,11 @@ func testAPIConnection(baseURL, authToken, model string) string {
 		model = "default"
 	}
 
-	// Test with /v1/messages endpoint
-	apiURL := strings.TrimSuffix(baseURL, "/") + "/v1/messages"
-
-	// Minimal test request body - simple question for faster response
+	// First, try /v1/messages endpoint (full validation test)
+	messagesURL := strings.TrimSuffix(baseURL, "/") + "/v1/messages"
 	body := fmt.Sprintf(`{"model":"%s","max_tokens":10,"messages":[{"role":"user","content":"1+1=?"}]}`, model)
 
-	req, err := http.NewRequest("POST", apiURL, strings.NewReader(body))
+	req, err := http.NewRequest("POST", messagesURL, strings.NewReader(body))
 	if err != nil {
 		return fmt.Sprintf("failed: %v", err)
 	}
@@ -162,11 +161,68 @@ func testAPIConnection(baseURL, authToken, model string) string {
 		return "ok"
 	}
 
+	// Check for specific errors that indicate the provider has strict access control
+	// but may still work with the actual Claude Code client
+	// In this case, fall back to /v1/models endpoint which validates the token
+	strictAccessErrors := []string{
+		"暂不支持非 claude code 请求",
+		"not supported from non-claude-code",
+		"仅支持 claude code 请求",
+	}
+
+	for _, errPattern := range strictAccessErrors {
+		if strings.Contains(respStr, errPattern) {
+			// Fall back to /v1/models endpoint
+			return testModelsEndpoint(baseURL, authToken)
+		}
+	}
+
+	// Also fall back to /v1/models if using "default" model alias and provider rejects it
+	// This helps providers that don't support model aliases but have valid tokens
+	if model == "default" && (strings.Contains(respStr, "不支持的模型") || strings.Contains(respStr, "unsupported model") || strings.Contains(respStr, "invalid_request_error")) {
+		return testModelsEndpoint(baseURL, authToken)
+	}
+
 	// Error format: HTTP {code} {response}
 	if respStr != "" {
 		return fmt.Sprintf("HTTP %d: %s", resp.StatusCode, respStr)
 	}
 	return fmt.Sprintf("HTTP %d", resp.StatusCode)
+}
+
+// testModelsEndpoint tests the /v1/models endpoint which validates the token without requiring message sending.
+func testModelsEndpoint(baseURL, authToken string) string {
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+	}
+
+	modelsURL := strings.TrimSuffix(baseURL, "/") + "/v1/models"
+
+	req, err := http.NewRequest("GET", modelsURL, nil)
+	if err != nil {
+		return fmt.Sprintf("failed: %v", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Sprintf("failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	buf, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+	respStr := strings.TrimSpace(string(buf))
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		// Token is valid, but provider has strict access control for messages
+		return "ok (token valid, messages endpoint restricted)"
+	}
+
+	if respStr != "" {
+		return fmt.Sprintf("HTTP %d (models): %s", resp.StatusCode, respStr)
+	}
+	return fmt.Sprintf("HTTP %d (models)", resp.StatusCode)
 }
 
 // ValidateAllProviders validates all configured providers.
@@ -187,8 +243,8 @@ func ValidateAllProviders(cfg Config) *ValidationSummary {
 			summary.Invalid++
 		}
 
-		// Check if API status indicates a failure (starts with "HTTP" or "failed")
-		if result.APIStatus != "" && result.APIStatus != "ok" {
+		// Check if API status indicates a failure (not "ok" and not starting with "ok (")
+		if result.APIStatus != "" && !isAPIStatusOK(result.APIStatus) {
 			summary.Warning++
 		}
 	}
@@ -203,7 +259,7 @@ func PrintResult(result *ValidationResult) {
 	if !result.Valid {
 		status = "Invalid"
 		statusColor = "\033[31m" // red
-	} else if result.APIStatus != "" && result.APIStatus != "ok" {
+	} else if result.APIStatus != "" && !isAPIStatusOK(result.APIStatus) {
 		status = "Warning"
 		statusColor = "\033[33m" // yellow
 	}
@@ -217,12 +273,7 @@ func PrintResult(result *ValidationResult) {
 		fmt.Printf("    Model: %s\n", result.Model)
 	}
 	if result.APIStatus != "" {
-		apiStatus := "OK"
-		apiColor := "\033[32m"
-		if result.APIStatus != "ok" {
-			apiStatus = result.APIStatus
-			apiColor = "\033[33m"
-		}
+		apiStatus, apiColor := formatAPIStatus(result.APIStatus)
 		fmt.Printf("    API connection: %s%s\033[0m\n", apiColor, apiStatus)
 	}
 
@@ -232,6 +283,23 @@ func PrintResult(result *ValidationResult) {
 	for _, err := range result.Errors {
 		fmt.Printf("    Error: %s\n", err)
 	}
+}
+
+// isAPIStatusOK checks if the API status indicates a successful validation.
+func isAPIStatusOK(status string) bool {
+	return status == "ok" || strings.HasPrefix(status, "ok (")
+}
+
+// formatAPIStatus formats the API status for display, returning the display text and color.
+func formatAPIStatus(status string) (string, string) {
+	if isAPIStatusOK(status) {
+		if status == "ok" {
+			return "OK", "\033[32m"
+		}
+		// For "ok (token valid, messages endpoint restricted)", show as OK with note
+		return "OK " + strings.TrimPrefix(status, "ok "), "\033[32m"
+	}
+	return status, "\033[33m"
 }
 
 // PrintSummary prints the validation summary for all providers.
@@ -305,7 +373,7 @@ func Run(cfg Config, opts *RunOptions) error {
 	}
 
 	// Also return error if API connection failed
-	if result.APIStatus != "" && result.APIStatus != "ok" {
+	if result.APIStatus != "" && !isAPIStatusOK(result.APIStatus) {
 		return fmt.Errorf("provider '%s' API test failed: %s", providerName, result.APIStatus)
 	}
 
