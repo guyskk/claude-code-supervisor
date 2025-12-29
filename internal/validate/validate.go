@@ -2,7 +2,6 @@
 package validate
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -129,18 +128,12 @@ func testAPIConnection(baseURL, authToken, model string) string {
 		Timeout: 8 * time.Second,
 	}
 
-	// Step 1: If no model specified, fetch available models from /v1/models
+	// Use "default" model alias if no model specified
 	if model == "" {
-		availableModel, err := fetchAvailableModel(client, baseURL, authToken)
-		if err != nil {
-			// Continue with the error, but try to use a fallback model
-			model = "claude-3-5-sonnet-20241022" // Common fallback
-		} else {
-			model = availableModel
-		}
+		model = "default"
 	}
 
-	// Step 2: Test with /v1/messages endpoint
+	// Test with /v1/messages endpoint
 	apiURL := strings.TrimSuffix(baseURL, "/") + "/v1/messages"
 
 	// Minimal test request body - simple question for faster response
@@ -174,49 +167,6 @@ func testAPIConnection(baseURL, authToken, model string) string {
 		return fmt.Sprintf("HTTP %d: %s", resp.StatusCode, respStr)
 	}
 	return fmt.Sprintf("HTTP %d", resp.StatusCode)
-}
-
-// fetchAvailableModel fetches the list of available models and returns the newest one.
-func fetchAvailableModel(client *http.Client, baseURL, authToken string) (string, error) {
-	modelsURL := strings.TrimSuffix(baseURL, "/") + "/v1/models"
-
-	req, err := http.NewRequest("GET", modelsURL, nil)
-	if err != nil {
-		return "", err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+authToken)
-	req.Header.Set("anthropic-version", "2023-06-01")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	// Parse response to get model list
-	// Response format: {"data":[{"id":"model-1"},{"id":"model-2"},...]}
-	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-
-	buf, _ := io.ReadAll(io.LimitReader(resp.Body, 10240)) // Limit to 10KB
-	if err := json.Unmarshal(buf, &result); err != nil {
-		return "", err
-	}
-
-	if len(result.Data) == 0 {
-		return "", fmt.Errorf("no models available")
-	}
-
-	// Return the first model (typically the newest)
-	return result.Data[0].ID, nil
 }
 
 // ValidateAllProviders validates all configured providers.
