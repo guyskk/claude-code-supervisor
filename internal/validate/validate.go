@@ -2,10 +2,12 @@
 package validate
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -45,6 +47,111 @@ type Config interface {
 	Providers() map[string]map[string]interface{}
 	// CurrentProvider returns the current provider name.
 	CurrentProvider() string
+}
+
+// Model represents a model from the /v1/models API response.
+type Model struct {
+	ID string `json:"id"`
+}
+
+// ModelsResponse represents the response from /v1/models endpoint.
+type ModelsResponse struct {
+	Data []Model `json:"data"`
+}
+
+// fetchAvailableModels fetches the list of available models from the provider.
+func fetchAvailableModels(baseURL, authToken string) ([]string, error) {
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+	}
+
+	modelsURL := strings.TrimSuffix(baseURL, "/") + "/v1/models"
+
+	req, err := http.NewRequest("GET", modelsURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	var modelsResp ModelsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
+		return nil, err
+	}
+
+	models := make([]string, len(modelsResp.Data))
+	for i, m := range modelsResp.Data {
+		models[i] = m.ID
+	}
+	return models, nil
+}
+
+// selectBestModel selects the best model from a list based on priority (sonnet > haiku > opus)
+// and recency (latest date within each priority group).
+func selectBestModel(models []string) string {
+	if len(models) == 0 {
+		return ""
+	}
+
+	// Priority groups
+	priority := map[string]int{
+		"sonnet": 3,
+		"haiku":  2,
+		"opus":   1,
+	}
+
+	// Date extraction regex (matches YYYYMMDD format)
+	dateRegex := regexp.MustCompile(`(\d{8})`)
+
+	type scoredModel struct {
+		id       string
+		priority int
+		date     string
+	}
+
+	var scored []scoredModel
+	for _, m := range models {
+		prio := 0
+		for name, p := range priority {
+			if strings.Contains(strings.ToLower(m), name) {
+				prio = p
+				break
+			}
+		}
+
+		date := "00000000" // Default to earliest date if none found
+		if matches := dateRegex.FindStringSubmatch(m); len(matches) > 1 {
+			date = matches[1]
+		}
+
+		scored = append(scored, scoredModel{
+			id:       m,
+			priority: prio,
+			date:     date,
+		})
+	}
+
+	// Sort by priority (desc), then by date (desc)
+	for i := 0; i < len(scored); i++ {
+		for j := i + 1; j < len(scored); j++ {
+			if scored[j].priority > scored[i].priority ||
+				(scored[j].priority == scored[i].priority && scored[j].date > scored[i].date) {
+				scored[i], scored[j] = scored[j], scored[i]
+			}
+		}
+	}
+
+	return scored[0].id
 }
 
 // ValidateProvider validates a single provider configuration.
@@ -123,18 +230,29 @@ func ValidateProvider(cfg Config, providerName string) *ValidationResult {
 }
 
 // testAPIConnection tests if the API endpoint is reachable using a minimal request.
+// If model is configured, uses it. Otherwise, fetches available models and selects the best one.
 // First tries /v1/messages endpoint, falls back to /v1/models for providers with strict access control.
 func testAPIConnection(baseURL, authToken, model string) string {
 	client := &http.Client{
 		Timeout: 8 * time.Second,
 	}
 
-	// Use "default" model alias if no model specified
+	// If no model specified, fetch available models and select the best one
 	if model == "" {
-		model = "default"
+		models, err := fetchAvailableModels(baseURL, authToken)
+		if err != nil {
+			// If we can't fetch models, try with "default" as fallback
+			model = "default"
+		} else {
+			model = selectBestModel(models)
+			if model == "" {
+				// No models available, try with "default"
+				model = "default"
+			}
+		}
 	}
 
-	// First, try /v1/messages endpoint (full validation test)
+	// Try /v1/messages endpoint (full validation test)
 	messagesURL := strings.TrimSuffix(baseURL, "/") + "/v1/messages"
 	body := fmt.Sprintf(`{"model":"%s","max_tokens":10,"messages":[{"role":"user","content":"1+1=?"}]}`, model)
 
@@ -175,12 +293,6 @@ func testAPIConnection(baseURL, authToken, model string) string {
 			// Fall back to /v1/models endpoint
 			return testModelsEndpoint(baseURL, authToken)
 		}
-	}
-
-	// Also fall back to /v1/models if using "default" model alias and provider rejects it
-	// This helps providers that don't support model aliases but have valid tokens
-	if model == "default" && (strings.Contains(respStr, "不支持的模型") || strings.Contains(respStr, "unsupported model") || strings.Contains(respStr, "invalid_request_error")) {
-		return testModelsEndpoint(baseURL, authToken)
 	}
 
 	// Error format: HTTP {code} {response}

@@ -587,6 +587,70 @@ func TestFormatAPIStatus(t *testing.T) {
 	}
 }
 
+// Test selectBestModel function
+func TestSelectBestModel(t *testing.T) {
+	tests := []struct {
+		name   string
+		models []string
+		want   string
+	}{
+		{
+			name: "sonnet priority over haiku and opus",
+			models: []string{
+				"claude-opus-4-5-20251101",
+				"claude-haiku-4-5-20251001",
+				"claude-sonnet-4-20250514",
+			},
+			want: "claude-sonnet-4-20250514",
+		},
+		{
+			name: "latest sonnet selected",
+			models: []string{
+				"claude-sonnet-4-5-20240929",
+				"claude-sonnet-4-20250514",
+				"claude-sonnet-4-5",
+			},
+			want: "claude-sonnet-4-20250514",
+		},
+		{
+			name: "haiku over opus when no sonnet",
+			models: []string{
+				"claude-opus-4-5-20251101",
+				"claude-haiku-4-5-20251001",
+			},
+			want: "claude-haiku-4-5-20251001",
+		},
+		{
+			name: "opus as last resort",
+			models: []string{
+				"claude-opus-4-5-20251101",
+			},
+			want: "claude-opus-4-5-20251101",
+		},
+		{
+			name:   "empty list returns empty",
+			models: []string{},
+			want:   "",
+		},
+		{
+			name: "models without date use default date",
+			models: []string{
+				"claude-sonnet-4-5",
+				"claude-opus-4-5",
+			},
+			want: "claude-sonnet-4-5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := selectBestModel(tt.models); got != tt.want {
+				t.Errorf("selectBestModel() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // Example mockConfig helper function for tests
 func newMockConfig(providers map[string]map[string]interface{}, current string) *mockConfig {
 	return &mockConfig{
