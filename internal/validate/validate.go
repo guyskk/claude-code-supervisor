@@ -3,8 +3,10 @@ package validate
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -46,13 +48,13 @@ type Config interface {
 }
 
 // ValidateProvider validates a single provider configuration.
-func ValidateProvider(cfg Config, providerName string, testAPI bool) *ValidationResult {
+func ValidateProvider(cfg Config, providerName string) *ValidationResult {
 	result := &ValidationResult{
 		Provider:  providerName,
 		Valid:     true,
 		Warnings:  []string{},
 		Errors:    []string{},
-		APIStatus: "skipped",
+		APIStatus: "",
 	}
 
 	providers := cfg.Providers()
@@ -110,30 +112,34 @@ func ValidateProvider(cfg Config, providerName string, testAPI bool) *Validation
 		result.Model = model
 	}
 
-	// Test API connection if requested and config is valid so far
-	if testAPI && result.Valid && hasBaseURL && hasAuthToken {
+	// Test API connection if config is valid so far
+	if result.Valid && hasBaseURL && hasAuthToken {
 		result.APIStatus = testAPIConnection(baseURL, authToken)
 	}
 
 	return result
 }
 
-// testAPIConnection tests if the API endpoint is reachable.
+// testAPIConnection tests if the API endpoint is reachable using a minimal request.
 func testAPIConnection(baseURL, authToken string) string {
-	// Create a simple test request to verify connectivity
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
 
-	// Try to make a simple request to the base URL
-	req, err := http.NewRequest("GET", baseURL, nil)
+	// Construct the correct /v1/messages endpoint
+	apiURL := strings.TrimSuffix(baseURL, "/") + "/v1/messages"
+
+	// Minimal test request body - simple question for faster response
+	body := `{"model":"test","max_tokens":10,"messages":[{"role":"user","content":"直接回答 1+1=?"}]}`
+
+	req, err := http.NewRequest("POST", apiURL, strings.NewReader(body))
 	if err != nil {
 		return fmt.Sprintf("failed: %v", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	req.Header.Set("x-api-key", authToken)
 	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("content-type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -141,23 +147,23 @@ func testAPIConnection(baseURL, authToken string) string {
 	}
 	defer resp.Body.Close()
 
-	// Check response status
-	// 401/403 indicates auth issues but connectivity is OK
-	// 404 might mean the endpoint structure is different but host is reachable
-	// 5xx indicates server issues
-	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		return "ok" // Connection works, auth might fail but that's expected
-	}
+	// Read response content (limited length)
+	buf, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+	respStr := strings.TrimSpace(string(buf))
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 500 {
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return "ok"
 	}
 
-	return fmt.Sprintf("failed: HTTP %d", resp.StatusCode)
+	// Error format: HTTP {code} {response}
+	if respStr != "" {
+		return fmt.Sprintf("HTTP %d: %s", resp.StatusCode, respStr)
+	}
+	return fmt.Sprintf("HTTP %d", resp.StatusCode)
 }
 
 // ValidateAllProviders validates all configured providers.
-func ValidateAllProviders(cfg Config, testAPI bool) *ValidationSummary {
+func ValidateAllProviders(cfg Config) *ValidationSummary {
 	providers := cfg.Providers()
 	summary := &ValidationSummary{
 		Total:   len(providers),
@@ -165,7 +171,7 @@ func ValidateAllProviders(cfg Config, testAPI bool) *ValidationSummary {
 	}
 
 	for providerName := range providers {
-		result := ValidateProvider(cfg, providerName, testAPI)
+		result := ValidateProvider(cfg, providerName)
 		summary.Results = append(summary.Results, result)
 
 		if result.Valid {
@@ -174,7 +180,8 @@ func ValidateAllProviders(cfg Config, testAPI bool) *ValidationSummary {
 			summary.Invalid++
 		}
 
-		if result.APIStatus == "failed" {
+		// Check if API status indicates a failure (starts with "HTTP" or "failed")
+		if result.APIStatus != "" && result.APIStatus != "ok" {
 			summary.Warning++
 		}
 	}
@@ -189,7 +196,7 @@ func PrintResult(result *ValidationResult) {
 	if !result.Valid {
 		status = "Invalid"
 		statusColor = "\033[31m" // red
-	} else if result.APIStatus == "failed" {
+	} else if result.APIStatus != "" && result.APIStatus != "ok" {
 		status = "Warning"
 		statusColor = "\033[33m" // yellow
 	}
@@ -202,7 +209,7 @@ func PrintResult(result *ValidationResult) {
 	if result.Model != "" {
 		fmt.Printf("    Model: %s\n", result.Model)
 	}
-	if result.APIStatus != "skipped" {
+	if result.APIStatus != "" {
 		apiStatus := "OK"
 		apiColor := "\033[32m"
 		if result.APIStatus != "ok" {
@@ -236,7 +243,6 @@ func PrintSummary(summary *ValidationSummary) {
 type RunOptions struct {
 	Provider    string // Empty means current provider
 	ValidateAll bool
-	TestAPI     bool
 }
 
 // Run executes the validation command with the given options.
@@ -249,7 +255,7 @@ func Run(cfg Config, opts *RunOptions) error {
 		}
 
 		fmt.Printf("Validating %d provider(s)...\n\n", len(cfg.Providers()))
-		summary := ValidateAllProviders(cfg, opts.TestAPI)
+		summary := ValidateAllProviders(cfg)
 
 		for _, result := range summary.Results {
 			PrintResult(result)
@@ -257,9 +263,12 @@ func Run(cfg Config, opts *RunOptions) error {
 
 		PrintSummary(summary)
 
-		// Return error if any provider is invalid
+		// Return error if any provider is invalid or API test failed
 		if summary.Invalid > 0 {
 			return fmt.Errorf("%d provider(s) invalid", summary.Invalid)
+		}
+		if summary.Warning > 0 {
+			return fmt.Errorf("%d provider(s) with API failures", summary.Warning)
 		}
 		return nil
 	}
@@ -281,11 +290,16 @@ func Run(cfg Config, opts *RunOptions) error {
 		return fmt.Errorf("no provider specified")
 	}
 
-	result := ValidateProvider(cfg, providerName, opts.TestAPI)
+	result := ValidateProvider(cfg, providerName)
 	PrintResult(result)
 
 	if !result.Valid {
 		return fmt.Errorf("provider '%s' is invalid", providerName)
+	}
+
+	// Also return error if API connection failed
+	if result.APIStatus != "" && result.APIStatus != "ok" {
+		return fmt.Errorf("provider '%s' API test failed: %s", providerName, result.APIStatus)
 	}
 
 	return nil

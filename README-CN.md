@@ -133,9 +133,6 @@ ccc validate kimi
 # 验证所有提供商
 ccc validate --all
 
-# 跳过 API 连通性测试（仅检查格式）
-ccc validate --no-api-test
-
 # 传递参数给 Claude Code
 ccc kimi --help
 ccc kimi /path/to/project
@@ -168,7 +165,7 @@ Validating 3 provider(s)...
   Warning: m2
     Base URL: https://api.minimaxi.com/anthropic
     Model: MiniMax-M2.1
-    API connection: failed: HTTP 503
+    API connection: HTTP 503: <错误信息>
 
 2/3 providers valid, 1 with API warnings
 ```

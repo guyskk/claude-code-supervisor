@@ -31,16 +31,15 @@ func setupTestDir(t *testing.T) func() {
 
 func TestParse(t *testing.T) {
 	tests := []struct {
-		name              string
-		args              []string
-		wantVersion       bool
-		wantHelp          bool
-		wantValidate      bool
-		wantValidateAll   bool
-		wantValidateNoAPI bool
-		wantValidateProv  string
-		wantProvider      string
-		wantClaudeArgs    []string
+		name             string
+		args             []string
+		wantVersion      bool
+		wantHelp         bool
+		wantValidate     bool
+		wantValidateAll  bool
+		wantValidateProv string
+		wantProvider     string
+		wantClaudeArgs   []string
 	}{
 		{
 			name:        "--version flag",
@@ -97,19 +96,6 @@ func TestParse(t *testing.T) {
 			wantValidate:    true,
 			wantValidateAll: true,
 		},
-		{
-			name:              "validate with --no-api-test",
-			args:              []string{"validate", "--no-api-test"},
-			wantValidate:      true,
-			wantValidateNoAPI: true,
-		},
-		{
-			name:              "validate with provider and --no-api-test",
-			args:              []string{"validate", "kimi", "--no-api-test"},
-			wantValidate:      true,
-			wantValidateProv:  "kimi",
-			wantValidateNoAPI: true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -131,9 +117,6 @@ func TestParse(t *testing.T) {
 				}
 				if cmd.ValidateOpts.ValidateAll != tt.wantValidateAll {
 					t.Errorf("ValidateOpts.ValidateAll = %v, want %v", cmd.ValidateOpts.ValidateAll, tt.wantValidateAll)
-				}
-				if cmd.ValidateOpts.TestAPI != !tt.wantValidateNoAPI {
-					t.Errorf("ValidateOpts.TestAPI = %v, want %v", cmd.ValidateOpts.TestAPI, !tt.wantValidateNoAPI)
 				}
 			}
 			if cmd.Provider != tt.wantProvider {

@@ -25,7 +25,6 @@ func TestValidateProvider(t *testing.T) {
 		name      string
 		config    *mockConfig
 		provider  string
-		testAPI   bool
 		wantValid bool
 		wantErrs  []string
 	}{
@@ -43,7 +42,6 @@ func TestValidateProvider(t *testing.T) {
 				},
 			},
 			provider:  "kimi",
-			testAPI:   false,
 			wantValid: true,
 			wantErrs:  nil,
 		},
@@ -59,7 +57,6 @@ func TestValidateProvider(t *testing.T) {
 				},
 			},
 			provider:  "glm",
-			testAPI:   false,
 			wantValid: false,
 			wantErrs:  []string{"Missing required environment variable: ANTHROPIC_BASE_URL"},
 		},
@@ -75,7 +72,6 @@ func TestValidateProvider(t *testing.T) {
 				},
 			},
 			provider:  "m2",
-			testAPI:   false,
 			wantValid: false,
 			wantErrs:  []string{"Missing required environment variable: ANTHROPIC_AUTH_TOKEN"},
 		},
@@ -92,7 +88,6 @@ func TestValidateProvider(t *testing.T) {
 				},
 			},
 			provider:  "broken",
-			testAPI:   false,
 			wantValid: false,
 			wantErrs:  []string{"Invalid Base URL format: must use http:// or https:// scheme"},
 		},
@@ -109,7 +104,6 @@ func TestValidateProvider(t *testing.T) {
 				},
 			},
 			provider:  "broken",
-			testAPI:   false,
 			wantValid: false,
 			wantErrs:  []string{"Invalid Base URL format: missing host"},
 		},
@@ -121,7 +115,6 @@ func TestValidateProvider(t *testing.T) {
 				},
 			},
 			provider:  "unknown",
-			testAPI:   false,
 			wantValid: false,
 			wantErrs:  []string{"Provider 'unknown' not found in configuration"},
 		},
@@ -138,7 +131,6 @@ func TestValidateProvider(t *testing.T) {
 				},
 			},
 			provider:  "minimal",
-			testAPI:   false,
 			wantValid: true,
 			wantErrs:  nil,
 		},
@@ -150,7 +142,6 @@ func TestValidateProvider(t *testing.T) {
 				},
 			},
 			provider:  "noenv",
-			testAPI:   false,
 			wantValid: false,
 			wantErrs: []string{
 				"Missing required environment variable: ANTHROPIC_BASE_URL",
@@ -170,7 +161,6 @@ func TestValidateProvider(t *testing.T) {
 				},
 			},
 			provider:  "empty",
-			testAPI:   false,
 			wantValid: false,
 			wantErrs: []string{
 				"Missing required environment variable: ANTHROPIC_BASE_URL",
@@ -190,7 +180,6 @@ func TestValidateProvider(t *testing.T) {
 				},
 			},
 			provider:  "http",
-			testAPI:   false,
 			wantValid: true,
 			wantErrs:  nil,
 		},
@@ -198,7 +187,7 @@ func TestValidateProvider(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ValidateProvider(tt.config, tt.provider, tt.testAPI)
+			result := ValidateProvider(tt.config, tt.provider)
 
 			if result.Valid != tt.wantValid {
 				t.Errorf("ValidateProvider() Valid = %v, want %v", result.Valid, tt.wantValid)
@@ -225,7 +214,6 @@ func TestValidateAllProviders(t *testing.T) {
 	tests := []struct {
 		name        string
 		config      *mockConfig
-		testAPI     bool
 		wantTotal   int
 		wantValid   int
 		wantInvalid int
@@ -248,7 +236,6 @@ func TestValidateAllProviders(t *testing.T) {
 					},
 				},
 			},
-			testAPI:     false,
 			wantTotal:   2,
 			wantValid:   2,
 			wantInvalid: 0,
@@ -270,7 +257,6 @@ func TestValidateAllProviders(t *testing.T) {
 					},
 				},
 			},
-			testAPI:     false,
 			wantTotal:   2,
 			wantValid:   1,
 			wantInvalid: 1,
@@ -287,7 +273,6 @@ func TestValidateAllProviders(t *testing.T) {
 					"broken2": {},
 				},
 			},
-			testAPI:     false,
 			wantTotal:   2,
 			wantValid:   0,
 			wantInvalid: 2,
@@ -297,7 +282,6 @@ func TestValidateAllProviders(t *testing.T) {
 			config: &mockConfig{
 				providers: map[string]map[string]interface{}{},
 			},
-			testAPI:     false,
 			wantTotal:   0,
 			wantValid:   0,
 			wantInvalid: 0,
@@ -306,7 +290,7 @@ func TestValidateAllProviders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			summary := ValidateAllProviders(tt.config, tt.testAPI)
+			summary := ValidateAllProviders(tt.config)
 
 			if summary.Total != tt.wantTotal {
 				t.Errorf("ValidateAllProviders() Total = %v, want %v", summary.Total, tt.wantTotal)
@@ -334,7 +318,7 @@ func TestValidationResultFields(t *testing.T) {
 		},
 	}
 
-	result := ValidateProvider(config, "test", false)
+	result := ValidateProvider(config, "test")
 
 	if result.Provider != "test" {
 		t.Errorf("Result.Provider = %q, want %q", result.Provider, "test")
@@ -348,8 +332,9 @@ func TestValidationResultFields(t *testing.T) {
 		t.Errorf("Result.Model = %q, want %q", result.Model, "claude-3-opus-20240229")
 	}
 
-	if result.APIStatus != "skipped" {
-		t.Errorf("Result.APIStatus = %q, want %q", result.APIStatus, "skipped")
+	// APIStatus should be set (not empty) since we test API connectivity
+	if result.APIStatus == "" {
+		t.Error("Result.APIStatus should be set when config is valid")
 	}
 }
 
@@ -368,36 +353,16 @@ func TestRun(t *testing.T) {
 
 		opts := &RunOptions{
 			ValidateAll: true,
-			TestAPI:     false,
 		}
 
 		err := Run(config, opts)
-		if err != nil {
-			t.Errorf("Run() error = %v, want nil", err)
-		}
-	})
-
-	t.Run("validate all - has invalid", func(t *testing.T) {
-		config := &mockConfig{
-			providers: map[string]map[string]interface{}{
-				"invalid": {
-					"env": map[string]interface{}{},
-				},
-			},
-		}
-
-		opts := &RunOptions{
-			ValidateAll: true,
-			TestAPI:     false,
-		}
-
-		err := Run(config, opts)
+		// Should fail because API connection will fail with test token
 		if err == nil {
-			t.Error("Run() error = nil, want error")
+			t.Error("Run() error = nil, want error (API connection expected to fail)")
 		}
 	})
 
-	t.Run("validate specific provider - valid", func(t *testing.T) {
+	t.Run("validate specific provider - valid format", func(t *testing.T) {
 		config := &mockConfig{
 			providers: map[string]map[string]interface{}{
 				"kimi": {
@@ -411,32 +376,12 @@ func TestRun(t *testing.T) {
 
 		opts := &RunOptions{
 			Provider: "kimi",
-			TestAPI:  false,
 		}
 
 		err := Run(config, opts)
-		if err != nil {
-			t.Errorf("Run() error = %v, want nil", err)
-		}
-	})
-
-	t.Run("validate specific provider - invalid", func(t *testing.T) {
-		config := &mockConfig{
-			providers: map[string]map[string]interface{}{
-				"invalid": {
-					"env": map[string]interface{}{},
-				},
-			},
-		}
-
-		opts := &RunOptions{
-			Provider: "invalid",
-			TestAPI:  false,
-		}
-
-		err := Run(config, opts)
+		// Should fail because API connection will fail with test token
 		if err == nil {
-			t.Error("Run() error = nil, want error")
+			t.Error("Run() error = nil, want error (API connection expected to fail)")
 		}
 	})
 
@@ -455,12 +400,11 @@ func TestRun(t *testing.T) {
 
 		opts := &RunOptions{
 			Provider: "",
-			TestAPI:  false,
 		}
 
 		err := Run(config, opts)
 		if err == nil {
-			t.Error("Run() error = nil, want error")
+			t.Error("Run() error = nil, want error (no provider specified)")
 		}
 	})
 
@@ -479,12 +423,12 @@ func TestRun(t *testing.T) {
 
 		opts := &RunOptions{
 			Provider: "",
-			TestAPI:  false,
 		}
 
 		err := Run(config, opts)
-		if err != nil {
-			t.Errorf("Run() error = %v, want nil", err)
+		// Should fail because API connection will fail with test token
+		if err == nil {
+			t.Error("Run() error = nil, want error (API connection expected to fail)")
 		}
 	})
 }
@@ -507,11 +451,11 @@ func TestPrintResult(t *testing.T) {
 		{
 			name: "invalid result",
 			result: &ValidationResult{
-				Provider: "broken",
-				Valid:    false,
-				Errors: []string{
-					"Missing required environment variable: ANTHROPIC_BASE_URL",
-				},
+				Provider:  "broken",
+				Valid:     false,
+				BaseURL:   "https://api.example.com",
+				APIStatus: "",
+				Errors:    []string{"Missing required environment variable: ANTHROPIC_AUTH_TOKEN"},
 			},
 		},
 		{
@@ -521,7 +465,7 @@ func TestPrintResult(t *testing.T) {
 				Valid:     true,
 				BaseURL:   "https://api.moonshot.cn/anthropic",
 				Model:     "claude-3-5-sonnet-20241022",
-				APIStatus: "failed: HTTP 503",
+				APIStatus: "HTTP 401: {\"error\":{\"message\":\"Invalid Authentication\"}}",
 			},
 		},
 	}
@@ -615,7 +559,7 @@ func ExampleValidateProvider() {
 		"",
 	)
 
-	result := ValidateProvider(config, "kimi", false)
+	result := ValidateProvider(config, "kimi")
 	fmt.Printf("Provider: %s, Valid: %v\n", result.Provider, result.Valid)
 	// Output: Provider: kimi, Valid: true
 }
@@ -639,7 +583,7 @@ func ExampleValidateAllProviders() {
 		"",
 	)
 
-	summary := ValidateAllProviders(config, false)
+	summary := ValidateAllProviders(config)
 	fmt.Printf("Total: %d, Valid: %d, Invalid: %d\n", summary.Total, summary.Valid, summary.Invalid)
 	// Output: Total: 2, Valid: 2, Invalid: 0
 }

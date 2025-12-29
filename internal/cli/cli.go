@@ -38,7 +38,6 @@ type Command struct {
 type ValidateCommand struct {
 	Provider    string // Empty means current provider
 	ValidateAll bool
-	TestAPI     bool
 }
 
 // Parse parses command-line arguments.
@@ -73,15 +72,11 @@ func Parse(args []string) *Command {
 
 // parseValidateArgs parses arguments for the validate command.
 func parseValidateArgs(args []string) *ValidateCommand {
-	opts := &ValidateCommand{
-		TestAPI: true, // Default is to test API
-	}
+	opts := &ValidateCommand{}
 
 	for i, arg := range args {
 		if arg == "--all" {
 			opts.ValidateAll = true
-		} else if arg == "--no-api-test" {
-			opts.TestAPI = false
 		} else if !strings.HasPrefix(arg, "--") && i == 0 {
 			// First non-flag argument is the provider name
 			opts.Provider = arg
@@ -94,7 +89,7 @@ func parseValidateArgs(args []string) *ValidateCommand {
 // ShowHelp displays usage information.
 func ShowHelp(cfg *config.Config, cfgErr error) {
 	help := `Usage: ccc [provider] [args...]
-       ccc validate [provider] [--all] [--no-api-test]
+       ccc validate [provider] [--all]
 
 Claude Code Configuration Switcher
 
@@ -106,9 +101,6 @@ Commands:
   ccc validate --all        Validate all provider configurations
   ccc --help       Show this help message
   ccc --version    Show version information
-
-Validation Options:
-  --no-api-test    Skip API connectivity test (only check config format)
 
 Environment Variables:
   CCC_CONFIG_DIR     Override the configuration directory (default: ~/.claude/)
@@ -230,7 +222,6 @@ func runValidate(cfg *config.Config, opts *ValidateCommand) error {
 	validateOpts := &validate.RunOptions{
 		Provider:    opts.Provider,
 		ValidateAll: opts.ValidateAll,
-		TestAPI:     opts.TestAPI,
 	}
 
 	return validate.Run(cfgAdapter, validateOpts)

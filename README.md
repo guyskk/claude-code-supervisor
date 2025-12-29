@@ -150,9 +150,6 @@ ccc validate kimi
 # Validate all providers
 ccc validate --all
 
-# Skip API connectivity test (format check only)
-ccc validate --no-api-test
-
 # Pass arguments to Claude Code
 ccc kimi --help
 ccc kimi /path/to/project
@@ -185,7 +182,7 @@ Validating 3 provider(s)...
   Warning: m2
     Base URL: https://api.minimaxi.com/anthropic
     Model: MiniMax-M2.1
-    API connection: failed: HTTP 503
+    API connection: HTTP 503: <error message>
 
 2/3 providers valid, 1 with API warnings
 ```
