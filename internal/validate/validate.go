@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -281,7 +282,7 @@ func testAPIConnection(baseURL, authToken, model string) string {
 	return fmt.Sprintf("HTTP %d", resp.StatusCode)
 }
 
-// ValidateAllProviders validates all configured providers.
+// ValidateAllProviders validates all configured providers in parallel.
 func ValidateAllProviders(cfg Config) *ValidationSummary {
 	providers := cfg.Providers()
 	summary := &ValidationSummary{
@@ -289,22 +290,32 @@ func ValidateAllProviders(cfg Config) *ValidationSummary {
 		Results: make([]*ValidationResult, 0, len(providers)),
 	}
 
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
 	for providerName := range providers {
-		result := ValidateProvider(cfg, providerName)
-		summary.Results = append(summary.Results, result)
+		wg.Add(1)
+		go func(name string) {
+			defer wg.Done()
+			result := ValidateProvider(cfg, name)
 
-		if result.Valid {
-			summary.Valid++
-		} else {
-			summary.Invalid++
-		}
+			mu.Lock()
+			summary.Results = append(summary.Results, result)
 
-		// Check if API status indicates a failure (not "ok" and not starting with "ok (")
-		if result.APIStatus != "" && !isAPIStatusOK(result.APIStatus) {
-			summary.Warning++
-		}
+			if result.Valid {
+				summary.Valid++
+			} else {
+				summary.Invalid++
+			}
+
+			if result.APIStatus != "" && !isAPIStatusOK(result.APIStatus) {
+				summary.Warning++
+			}
+			mu.Unlock()
+		}(providerName)
 	}
 
+	wg.Wait()
 	return summary
 }
 
