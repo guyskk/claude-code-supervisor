@@ -23,19 +23,21 @@
 
 预编译的二进制文件可在 [Releases 页面](https://github.com/guyskk/claude-code-config-switcher/releases) 下载。
 
+**Linux / macOS**
+
 ```bash
-# 下载你平台的版本
-curl -LO https://github.com/guyskk/claude-code-config-switcher/releases/latest/download/ccc-$(uname -s)-$(uname -m)
-
-# 安装到系统目录
-sudo chmod +x ccc-$(uname -s)-$(uname -m)
-sudo mv ccc-$(uname -s)-$(uname -m) /usr/local/bin/ccc
-
-# 验证安装
-ccc --version
+# 自动检测平台并安装（单行命令）
+OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/'); curl -LO "https://github.com/guyskk/claude-code-config-switcher/releases/latest/download/ccc-${OS}-${ARCH}" && sudo install -m 755 "ccc-${OS}-${ARCH}" /usr/local/bin/ccc && rm "ccc-${OS}-${ARCH}" && ccc --version
 ```
 
-**支持的平台：** `darwin-amd64`、`darwin-arm64`、`linux-amd64`、`linux-arm64`、`windows-amd64.exe`
+**Windows (PowerShell)**
+
+```powershell
+# 自动检测平台并安装
+$os = "windows"; $arch = if ([Environment]::Is64BitProcess) { "amd64" } else { throw "32-bit not supported" }; Invoke-WebRequest -Uri "https://github.com/guyskk/claude-code-config-switcher/releases/latest/download/ccc-${os}-${arch}.exe" -OutFile "ccc.exe"; Move-Item -Path "ccc.exe" -Destination "$env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\ccc.exe" -Force; ccc --version
+```
+
+**支持的平台：** `darwin-amd64`、`darwin-arm64`、`linux-amd64`、`linux-arm64`、`windows-amd64`
 
 ### 从源码构建
 
