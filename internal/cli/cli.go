@@ -207,7 +207,7 @@ func Run(cmd *Command) error {
 	}
 
 	// Run claude with the settings file
-	if err := runClaude(providerName, mergedSettings, cmd.ClaudeArgs); err != nil {
+	if err := runClaude(cfg, providerName, mergedSettings, cmd.ClaudeArgs); err != nil {
 		return fmt.Errorf("error running claude: %w", err)
 	}
 
@@ -270,14 +270,19 @@ func determineProvider(cmd *Command, cfg *config.Config) string {
 }
 
 // runClaude executes the claude command with the settings file.
-func runClaude(providerName string, settings map[string]interface{}, args []string) error {
+func runClaude(cfg *config.Config, providerName string, settings map[string]interface{}, args []string) error {
 	settingsPath := config.GetSettingsPath(providerName)
 
 	// Extract ANTHROPIC_AUTH_TOKEN from env
 	authToken := provider.GetAuthToken(settings)
 
-	// Build the claude command
-	cmdArgs := append([]string{"--settings", settingsPath}, args...)
+	// Build the claude command: merge configured claude_args with command-line args
+	var cmdArgs []string
+	cmdArgs = append(cmdArgs, "--settings", settingsPath)
+	if len(cfg.ClaudeArgs) > 0 {
+		cmdArgs = append(cmdArgs, cfg.ClaudeArgs...)
+	}
+	cmdArgs = append(cmdArgs, args...)
 	claudeCmd := exec.Command("claude", cmdArgs...)
 
 	// Set up environment variables

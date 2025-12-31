@@ -75,6 +75,7 @@ Create `~/.claude/ccc.json`:
       "DISABLE_COST_WARNINGS": "1"
     }
   },
+  "claude_args": ["--verbose", "--debug"],
   "current_provider": "kimi",
   "providers": {
     "kimi": {
@@ -107,6 +108,7 @@ Create `~/.claude/ccc.json`:
 
 **Config structure:**
 - `settings` — Base template shared by all providers
+- `claude_args` — Fixed arguments to pass to Claude Code (optional)
 - `current_provider` — Last used provider (auto-updated)
 - `providers` — Provider-specific overrides
 
@@ -155,6 +157,11 @@ ccc validate --all
 # Pass arguments to Claude Code
 ccc kimi --help
 ccc kimi /path/to/project
+```
+
+**Note:** Arguments configured in `claude_args` are automatically prepended to any command-line arguments. For example, if `claude_args` is `["--verbose", "--debug"]` and you run `ccc kimi --help`, the actual command will be:
+```bash
+claude --settings ~/.claude/settings-kimi.json --verbose --debug --help
 ```
 
 ### Validation Command

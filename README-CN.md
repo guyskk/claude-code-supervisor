@@ -75,6 +75,7 @@ $os = "windows"; $arch = if ([Environment]::Is64BitProcess) { "amd64" } else { t
       "DISABLE_COST_WARNINGS": "1"
     }
   },
+  "claude_args": ["--verbose", "--debug"],
   "current_provider": "kimi",
   "providers": {
     "kimi": {
@@ -107,6 +108,7 @@ $os = "windows"; $arch = if ([Environment]::Is64BitProcess) { "amd64" } else { t
 
 **配置结构：**
 - `settings` — 所有提供商共享的基础模板
+- `claude_args` — 固定传递给 Claude Code 的参数（可选）
 - `current_provider` — 最后使用的提供商（自动更新）
 - `providers` — 提供商特定配置
 
@@ -138,6 +140,11 @@ ccc validate --all
 # 传递参数给 Claude Code
 ccc kimi --help
 ccc kimi /path/to/project
+```
+
+**说明：** `claude_args` 中配置的参数会自动添加到任何命令行参数之前。例如，如果 `claude_args` 配置为 `["--verbose", "--debug"]`，执行 `ccc kimi --help` 时实际运行的命令是：
+```bash
+claude --settings ~/.claude/settings-kimi.json --verbose --debug --help
 ```
 
 ### 配置验证命令

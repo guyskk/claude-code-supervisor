@@ -32,6 +32,7 @@ func GetDir() string {
 // Settings and Providers use dynamic maps to handle arbitrary Claude settings fields.
 type Config struct {
 	Settings        map[string]interface{}            `json:"settings"`
+	ClaudeArgs      []string                          `json:"claude_args,omitempty"`
 	CurrentProvider string                            `json:"current_provider"`
 	Providers       map[string]map[string]interface{} `json:"providers"`
 }
