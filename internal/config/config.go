@@ -204,3 +204,52 @@ func GetBaseURL(settings map[string]interface{}) string {
 func GetModel(settings map[string]interface{}) string {
 	return GetEnvString(settings, "ANTHROPIC_MODEL", "")
 }
+
+// GetSettingsJSONPath returns the path to ~/.claude/settings.json.
+func GetSettingsJSONPath() string {
+	return filepath.Join(GetDir(), "settings.json")
+}
+
+// ClearEnvInSettings clears the env field in ~/.claude/settings.json to prevent
+// configuration pollution. Returns true if settings.json was modified.
+func ClearEnvInSettings() (bool, error) {
+	settingsPath := GetSettingsJSONPath()
+
+	// Read settings.json if it exists
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// settings.json doesn't exist, nothing to clear
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to read settings.json: %w", err)
+	}
+
+	// Parse the settings
+	var settings map[string]interface{}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return false, fmt.Errorf("failed to parse settings.json: %w", err)
+	}
+
+	// Check if env field exists
+	_, hasEnv := settings["env"]
+	if !hasEnv {
+		// No env field to clear
+		return false, nil
+	}
+
+	// Clear the env field
+	settings["env"] = map[string]interface{}{}
+
+	// Write back to file
+	data, err = json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal settings: %w", err)
+	}
+
+	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+		return false, fmt.Errorf("failed to write settings.json: %w", err)
+	}
+
+	return true, nil
+}

@@ -654,3 +654,131 @@ func TestGetModel(t *testing.T) {
 func MarshalIndent(v interface{}, prefix, indent string) ([]byte, error) {
 	return json.MarshalIndent(v, prefix, indent)
 }
+
+func TestGetSettingsJSONPath(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		{"default path"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, cleanup := setupTestDir(t)
+			defer cleanup()
+
+			path := GetSettingsJSONPath()
+			if !strings.Contains(path, "settings.json") {
+				t.Errorf("GetSettingsJSONPath() should contain 'settings.json', got %s", path)
+			}
+		})
+	}
+}
+
+func TestClearEnvInSettings(t *testing.T) {
+	t.Run("settings.json exists with env field", func(t *testing.T) {
+		tmpDir, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		// Create settings.json with env field
+		settingsPath := filepath.Join(tmpDir, "settings.json")
+		originalSettings := map[string]interface{}{
+			"permissions": map[string]interface{}{
+				"allow": []interface{}{"Edit", "Write"},
+			},
+			"alwaysThinkingEnabled": true,
+			"env": map[string]interface{}{
+				"ANTHROPIC_AUTH_TOKEN": "sk-old",
+				"ANTHROPIC_BASE_URL":   "https://old.example.com",
+			},
+		}
+		writeJSONFile(t, settingsPath, originalSettings)
+
+		// Clear env
+		cleared, err := ClearEnvInSettings()
+		if err != nil {
+			t.Fatalf("ClearEnvInSettings() error = %v", err)
+		}
+		if !cleared {
+			t.Error("ClearEnvInSettings() should return true when env was cleared")
+		}
+
+		// Verify env is cleared but other fields preserved
+		var loaded map[string]interface{}
+		readJSONFile(t, settingsPath, &loaded)
+		if loaded["permissions"] == nil {
+			t.Error("permissions should be preserved")
+		}
+		if loaded["alwaysThinkingEnabled"] != true {
+			t.Error("alwaysThinkingEnabled should be preserved")
+		}
+		env, ok := loaded["env"].(map[string]interface{})
+		if !ok {
+			t.Fatal("env should exist and be a map")
+		}
+		if len(env) != 0 {
+			t.Errorf("env should be empty, got %v", env)
+		}
+	})
+
+	t.Run("settings.json does not exist", func(t *testing.T) {
+		_, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		cleared, err := ClearEnvInSettings()
+		if err != nil {
+			t.Fatalf("ClearEnvInSettings() error = %v", err)
+		}
+		if cleared {
+			t.Error("ClearEnvInSettings() should return false when file doesn't exist")
+		}
+	})
+
+	t.Run("settings.json exists without env field", func(t *testing.T) {
+		tmpDir, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		// Create settings.json without env field
+		settingsPath := filepath.Join(tmpDir, "settings.json")
+		originalSettings := map[string]interface{}{
+			"permissions": map[string]interface{}{
+				"allow": []interface{}{"Edit"},
+			},
+			"alwaysThinkingEnabled": true,
+		}
+		writeJSONFile(t, settingsPath, originalSettings)
+
+		// Try to clear env
+		cleared, err := ClearEnvInSettings()
+		if err != nil {
+			t.Fatalf("ClearEnvInSettings() error = %v", err)
+		}
+		if cleared {
+			t.Error("ClearEnvInSettings() should return false when env field doesn't exist")
+		}
+
+		// Verify file unchanged
+		var loaded map[string]interface{}
+		readJSONFile(t, settingsPath, &loaded)
+		compareJSON(t, loaded, originalSettings)
+	})
+
+	t.Run("settings.json has invalid JSON", func(t *testing.T) {
+		tmpDir, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		// Create invalid JSON file
+		settingsPath := filepath.Join(tmpDir, "settings.json")
+		if err := os.WriteFile(settingsPath, []byte("{invalid json}"), 0644); err != nil {
+			t.Fatalf("Failed to write file: %v", err)
+		}
+
+		_, err := ClearEnvInSettings()
+		if err == nil {
+			t.Fatal("ClearEnvInSettings() should error with invalid JSON")
+		}
+		if !strings.Contains(err.Error(), "failed to parse settings.json") {
+			t.Errorf("Error should mention 'failed to parse settings.json', got: %v", err)
+		}
+	})
+}
