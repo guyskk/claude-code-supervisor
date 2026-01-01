@@ -231,10 +231,16 @@ func ClearEnvInSettings() (bool, error) {
 		return false, fmt.Errorf("failed to parse settings.json: %w", err)
 	}
 
-	// Check if env field exists
-	_, hasEnv := settings["env"]
+	// Check if env field exists and is non-empty
+	envField, hasEnv := settings["env"]
 	if !hasEnv {
 		// No env field to clear
+		return false, nil
+	}
+
+	// Check if env is already empty
+	if envMap, ok := envField.(map[string]interface{}); ok && len(envMap) == 0 {
+		// env field exists but is already empty, no need to clear
 		return false, nil
 	}
 

@@ -763,6 +763,36 @@ func TestClearEnvInSettings(t *testing.T) {
 		compareJSON(t, loaded, originalSettings)
 	})
 
+	t.Run("settings.json exists with empty env field", func(t *testing.T) {
+		tmpDir, cleanup := setupTestDir(t)
+		defer cleanup()
+
+		// Create settings.json with empty env field
+		settingsPath := filepath.Join(tmpDir, "settings.json")
+		originalSettings := map[string]interface{}{
+			"permissions": map[string]interface{}{
+				"allow": []interface{}{"Edit"},
+			},
+			"alwaysThinkingEnabled": true,
+			"env":                   map[string]interface{}{},
+		}
+		writeJSONFile(t, settingsPath, originalSettings)
+
+		// Try to clear env - should return false since env is already empty
+		cleared, err := ClearEnvInSettings()
+		if err != nil {
+			t.Fatalf("ClearEnvInSettings() error = %v", err)
+		}
+		if cleared {
+			t.Error("ClearEnvInSettings() should return false when env field is already empty")
+		}
+
+		// Verify file unchanged
+		var loaded map[string]interface{}
+		readJSONFile(t, settingsPath, &loaded)
+		compareJSON(t, loaded, originalSettings)
+	})
+
 	t.Run("settings.json has invalid JSON", func(t *testing.T) {
 		tmpDir, cleanup := setupTestDir(t)
 		defer cleanup()
