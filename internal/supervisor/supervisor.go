@@ -67,11 +67,17 @@ func (s *Supervisor) readUserInput() (string, error) {
 	fmt.Println()
 
 	prompt := promptui.Prompt{
-		Label:     ">",
+		Label:     "",
 		Validate:  validateNotEmpty,
 		Pointer:   promptui.PipeCursor,
 		Default:   "",
 		AllowEdit: true,
+		Templates: &promptui.PromptTemplates{
+			Prompt:  "> ",
+			Success: "> ",
+			Valid:   "> ",
+			Invalid: "> ",
+		},
 	}
 
 	result, err := prompt.Run()
