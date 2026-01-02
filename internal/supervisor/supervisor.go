@@ -8,8 +8,6 @@ import (
 	"os/exec"
 	"strings"
 	"syscall"
-
-	"github.com/creack/pty"
 )
 
 // Supervisor manages the Agent-Supervisor automatic loop.
@@ -74,12 +72,18 @@ func (s *Supervisor) readUserInput() (string, error) {
 		fmt.Print("> ")
 	}
 
+	// Check for scanner errors (excluding EOF which is expected)
 	if err := scanner.Err(); err != nil {
 		return "", err
 	}
 
 	// Ctrl+D pressed, join lines
-	return strings.Join(lines, "\n"), nil
+	input := strings.Join(lines, "\n")
+	if strings.TrimSpace(input) == "" {
+		return "", fmt.Errorf("empty input")
+	}
+
+	return input, nil
 }
 
 // loop implements the main Agent-Supervisor loop.
@@ -147,41 +151,27 @@ func (s *Supervisor) runAgentIteration() (sessionID, output string, err error) {
 	// Set input
 	cmd.Stdin = strings.NewReader(input)
 
-	// Start pty
-	ptyFile, err := pty.Start(cmd)
+	// Execute and capture output (use CombinedOutput to see all output)
+	outputBytes, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to start pty: %w", err)
+		return "", "", fmt.Errorf("agent execution failed: %w, output: %s", err, string(outputBytes))
 	}
-	defer ptyFile.Close()
 
-	// Read output and parse stream-json
-	var outputBuilder strings.Builder
-	buf := make([]byte, 4096)
+	output = string(outputBytes)
 
-	for {
-		n, err := ptyFile.Read(buf)
-		if n > 0 {
-			chunk := string(buf[:n])
-			fmt.Print(chunk) // Show to user
-			outputBuilder.WriteString(chunk)
+	// Show to user (may contain stream-json mixed with other output)
+	fmt.Print(output)
 
-			// Try to parse stream-json for session ID
-			msg, parseErr := ParseStreamJSONLine(chunk)
-			if parseErr == nil && msg != nil && msg.SessionID != "" {
-				sessionID = msg.SessionID
-			}
-		}
-
-		if err != nil {
-			// Check if process exited normally
-			if cmd.Process != nil {
-				cmd.Process.Wait()
-			}
-			break
+	// Parse stream-json line by line to find session_id
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		msg, parseErr := ParseStreamJSONLine(line)
+		if parseErr == nil && msg != nil && msg.SessionID != "" {
+			sessionID = msg.SessionID
 		}
 	}
 
-	return sessionID, outputBuilder.String(), nil
+	return sessionID, output, nil
 }
 
 // runSupervisorCheck runs the Supervisor check phase.
