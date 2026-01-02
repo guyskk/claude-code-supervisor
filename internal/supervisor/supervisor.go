@@ -204,11 +204,9 @@ func (s *Supervisor) runSupervisorCheck() (completed bool, feedback string, err 
 	// Use CombinedOutput to capture both stdout and stderr for better error debugging
 	cmd := exec.Command(args[0], args[1:]...)
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return false, "", fmt.Errorf("supervisor command failed: %w, output: %s", err, string(output))
-	}
 
 	// Parse stream-json output to extract actual text content
+	// Even if command returns non-zero exit status, we may have valid output
 	outputStr := string(output)
 	lines := strings.Split(outputStr, "\n")
 
@@ -242,6 +240,14 @@ func (s *Supervisor) runSupervisorCheck() (completed bool, feedback string, err 
 	}
 
 	feedback = strings.TrimSpace(textContent.String())
+
+	// Only return error if we got no output at all
+	if err != nil && feedback == "" {
+		return false, "", fmt.Errorf("supervisor command failed: %w, output: %s", err, string(output))
+	}
+
+	// If we have feedback, return it even if command had non-zero exit status
+	// (e.g., API errors still produce valid output in stream-json format)
 	return completed, feedback, nil
 }
 
