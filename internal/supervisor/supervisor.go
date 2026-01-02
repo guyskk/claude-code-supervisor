@@ -66,17 +66,18 @@ func (s *Supervisor) Run() error {
 func (s *Supervisor) readUserInput() (string, error) {
 	fmt.Println()
 
+	// Block cursor pointer function
+	blockCursor := func(to []rune) []rune {
+		return append([]rune{'█'}, to...)
+	}
+
 	prompt := promptui.Prompt{
 		Label:     "",
-		Validate:  validateNotEmpty,
-		Pointer:   promptui.PipeCursor,
+		Pointer:   blockCursor,
 		Default:   "",
 		AllowEdit: true,
 		Templates: &promptui.PromptTemplates{
-			Prompt:  "> ",
-			Success: "> ",
-			Valid:   "> ",
-			Invalid: "> ",
+			Prompt: "> ",
 		},
 	}
 
@@ -88,15 +89,12 @@ func (s *Supervisor) readUserInput() (string, error) {
 		return "", err
 	}
 
-	return strings.TrimSpace(result), nil
-}
-
-// validateNotEmpty ensures the input is not empty.
-func validateNotEmpty(input string) error {
-	if strings.TrimSpace(input) == "" {
-		return fmt.Errorf("task cannot be empty")
+	result = strings.TrimSpace(result)
+	if result == "" {
+		return "", fmt.Errorf("empty input")
 	}
-	return nil
+
+	return result, nil
 }
 
 // loop implements the main Agent-Supervisor loop.
