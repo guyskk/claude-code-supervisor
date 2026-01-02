@@ -2,11 +2,12 @@
 package supervisor
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/manifoldco/promptui"
 )
 
 // Supervisor manages the Agent-Supervisor automatic loop.
@@ -43,8 +44,9 @@ func New(cfg *Config) *Supervisor {
 
 // Run starts the Supervisor loop.
 func (s *Supervisor) Run() error {
-	fmt.Println("Supervisor mode enabled")
-	fmt.Println("Enter your task (press Ctrl+D when done):")
+	fmt.Println("\n╔════════════════════════════════════════════════════════════╗")
+	fmt.Println("║           Supervisor Mode - Agent Auto-Loop              ║")
+	fmt.Println("╚════════════════════════════════════════════════════════════╝")
 
 	// Read initial user input from stdin
 	initialInput, err := s.readUserInput()
@@ -60,29 +62,36 @@ func (s *Supervisor) Run() error {
 	return s.loop()
 }
 
-// readUserInput reads multi-line input from stdin until Ctrl+D.
+// readUserInput reads multi-line input using promptui.
 func (s *Supervisor) readUserInput() (string, error) {
-	var lines []string
-	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Println("\n📝 Please enter your task:")
+	fmt.Println("   (Press Enter to confirm, Ctrl+C to cancel)")
 
-	fmt.Print("> ")
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-		fmt.Print("> ")
+	prompt := promptui.Prompt{
+		Label:     "Task",
+		Validate:  validateNotEmpty,
+		Pointer:   promptui.PipeCursor,
+		Default:   "",
+		AllowEdit: true,
 	}
 
-	// Check for scanner errors (excluding EOF which is expected)
-	if err := scanner.Err(); err != nil {
+	result, err := prompt.Run()
+	if err != nil {
+		if err == promptui.ErrInterrupt {
+			return "", fmt.Errorf("input cancelled")
+		}
 		return "", err
 	}
 
-	// Ctrl+D pressed, join lines
-	input := strings.Join(lines, "\n")
-	if strings.TrimSpace(input) == "" {
-		return "", fmt.Errorf("empty input")
-	}
+	return strings.TrimSpace(result), nil
+}
 
-	return input, nil
+// validateNotEmpty ensures the input is not empty.
+func validateNotEmpty(input string) error {
+	if strings.TrimSpace(input) == "" {
+		return fmt.Errorf("task cannot be empty")
+	}
+	return nil
 }
 
 // loop implements the main Agent-Supervisor loop.
@@ -92,7 +101,7 @@ func (s *Supervisor) loop() error {
 		iteration++
 
 		// Phase 1: Run Agent with accumulated input
-		fmt.Printf("\n=== Agent Iteration %d ===\n", iteration)
+		printSectionHeader("🤖", fmt.Sprintf("Agent Iteration %d", iteration), "cyan")
 		sessionID, output, err := s.runAgentIteration()
 		if err != nil {
 			return fmt.Errorf("agent phase failed: %w", err)
@@ -102,7 +111,7 @@ func (s *Supervisor) loop() error {
 		s.agentOutputs = append(s.agentOutputs, output)
 
 		// Phase 2: Run Supervisor check
-		fmt.Printf("\n=== Supervisor Check ===\n")
+		printSectionHeader("👁️", "Supervisor Check", "yellow")
 		completed, feedback, err := s.runSupervisorCheck()
 		if err != nil {
 			return fmt.Errorf("supervisor check failed: %w", err)
@@ -110,13 +119,14 @@ func (s *Supervisor) loop() error {
 
 		// Phase 3: Check if task is completed
 		if completed {
-			fmt.Println("\n[Supervisor] Task completed!")
+			printSuccess("Task completed successfully!")
 			break
 		}
 
 		// Phase 4: Feed feedback back to Agent for next iteration
-		fmt.Printf("\n[Supervisor Feedback]\n%s\n", feedback)
-		fmt.Println("\n[Continuing with feedback...]")
+		printSectionHeader("💬", "Supervisor Feedback", "magenta")
+		fmt.Printf("%s\n\n", feedback)
+		printInfo("Continuing with feedback...")
 
 		// Add feedback as new user input for next iteration
 		s.userInputs = append(s.userInputs, feedback)
@@ -255,7 +265,7 @@ func (s *Supervisor) runSupervisorCheck() (completed bool, feedback string, err 
 
 // resumeFinal resumes the original session for user interaction.
 func (s *Supervisor) resumeFinal() error {
-	fmt.Println("\n=== Resuming session for interaction ===")
+	printSectionHeader("🔄", "Resuming Session", "green")
 
 	claudePath, err := exec.LookPath("claude")
 	if err != nil {
@@ -273,10 +283,45 @@ func (s *Supervisor) resumeFinal() error {
 	// Run the command and wait for it to complete
 	if err := cmd.Run(); err != nil {
 		// Resume failed, but supervisor task is complete
-		fmt.Printf("\nNote: Session resume ended: %v\n", err)
-		fmt.Println("Supervisor mode finished successfully.")
+		fmt.Printf("\n")
+		printInfo(fmt.Sprintf("Session resume ended: %v", err))
+		printSuccess("Supervisor mode finished successfully.")
 		return nil
 	}
 
 	return nil
+}
+
+// printSectionHeader prints a formatted section header with emoji and color.
+func printSectionHeader(emoji, title, color string) {
+	colors := map[string]string{
+		"cyan":    "\033[36m",
+		"yellow":  "\033[33m",
+		"green":   "\033[32m",
+		"magenta": "\033[35m",
+		"blue":    "\033[34m",
+		"red":     "\033[31m",
+	}
+	reset := "\033[0m"
+	c := colors[color]
+	if c == "" {
+		c = "\033[0m"
+	}
+
+	fmt.Printf("\n%s%s %s %s%s\n", c, emoji, title, strings.Repeat("─", 60-len(title)), reset)
+}
+
+// printSuccess prints a success message.
+func printSuccess(msg string) {
+	fmt.Printf("\033[32m✓ %s\033[0m\n", msg)
+}
+
+// printInfo prints an info message.
+func printInfo(msg string) {
+	fmt.Printf("\033[36mℹ %s\033[0m\n", msg)
+}
+
+// printError prints an error message.
+func printError(msg string) {
+	fmt.Printf("\033[31m✗ %s\033[0m\n", msg)
 }
