@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/manifoldco/promptui"
+	"github.com/charmbracelet/huh"
 )
 
 // Supervisor manages the Agent-Supervisor automatic loop.
@@ -62,39 +62,31 @@ func (s *Supervisor) Run() error {
 	return s.loop()
 }
 
-// readUserInput reads multi-line input using promptui.
+// readUserInput reads multi-line input using huh.
 func (s *Supervisor) readUserInput() (string, error) {
 	fmt.Println()
 
-	// Block cursor pointer function
-	blockCursor := func(to []rune) []rune {
-		return append([]rune{'█'}, to...)
-	}
+	var input string
+	inputField := huh.NewInput().
+		Title("").
+		Placeholder("").
+		Value(&input).
+		CharLimit(-1) // No limit
 
-	prompt := promptui.Prompt{
-		Label:     "",
-		Pointer:   blockCursor,
-		Default:   "",
-		AllowEdit: true,
-		Templates: &promptui.PromptTemplates{
-			Prompt: "> ",
-		},
-	}
-
-	result, err := prompt.Run()
+	err := huh.NewForm(huh.NewGroup(inputField)).Run()
 	if err != nil {
-		if err == promptui.ErrInterrupt {
+		if err == huh.ErrUserAborted {
 			return "", fmt.Errorf("input cancelled")
 		}
 		return "", err
 	}
 
-	result = strings.TrimSpace(result)
-	if result == "" {
+	input = strings.TrimSpace(input)
+	if input == "" {
 		return "", fmt.Errorf("empty input")
 	}
 
-	return result, nil
+	return input, nil
 }
 
 // loop implements the main Agent-Supervisor loop.
