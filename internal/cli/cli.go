@@ -28,10 +28,14 @@ type Command struct {
 	Help       bool
 	Provider   string
 	ClaudeArgs []string
+	Supervisor bool
 
 	// Validate command options
 	Validate     bool
 	ValidateOpts *ValidateCommand
+
+	// supervisor-hook subcommand
+	HookSubcommand bool
 }
 
 // ValidateCommand represents options for the validate command.
@@ -44,6 +48,12 @@ type ValidateCommand struct {
 func Parse(args []string) *Command {
 	cmd := &Command{}
 
+	// Check for supervisor-hook subcommand first
+	if len(args) > 0 && args[0] == "supervisor-hook" {
+		cmd.HookSubcommand = true
+		return cmd
+	}
+
 	for i, arg := range args {
 		if arg == "--version" || arg == "-v" {
 			cmd.Version = true
@@ -52,6 +62,9 @@ func Parse(args []string) *Command {
 		if arg == "--help" || arg == "-h" {
 			cmd.Help = true
 			return cmd
+		}
+		if arg == "--supervisor" {
+			cmd.Supervisor = true
 		}
 		// First non-flag argument might be a provider name or validate command
 		if i == 0 && !strings.HasPrefix(arg, "-") {
@@ -90,6 +103,7 @@ func parseValidateArgs(args []string) *ValidateCommand {
 func ShowHelp(cfg *config.Config, cfgErr error) {
 	help := `Usage: ccc [provider] [args...]
        ccc validate [provider] [--all]
+       ccc --supervisor [provider] [args...]
 
 Claude Code Configuration Switcher
 
@@ -99,11 +113,19 @@ Commands:
   ccc validate     Validate the current provider configuration
   ccc validate <provider>   Validate a specific provider configuration
   ccc validate --all        Validate all provider configurations
+  ccc --supervisor         Enable Supervisor mode (Agent-Supervisor automatic loop)
+  ccc --supervisor <provider>   Switch to provider and enable Supervisor mode
   ccc --help       Show this help message
   ccc --version    Show version information
 
 Environment Variables:
   CCC_CONFIG_DIR     Override the configuration directory (default: ~/.claude/)
+
+Supervisor Mode:
+  When enabled, ccc automatically runs a Supervisor check after each Agent stop.
+  The Supervisor reviews the work quality and provides feedback if incomplete.
+  Creates an action-feedback loop until the Supervisor confirms task completion.
+  Requires a SUPERVISOR.md file in ~/.claude/SUPERVISOR.md.
 `
 	fmt.Print(help)
 
@@ -137,6 +159,11 @@ func ShowVersion() {
 
 // Run executes the CLI command.
 func Run(cmd *Command) error {
+	// Handle supervisor-hook subcommand
+	if cmd.HookSubcommand {
+		return RunSupervisorHook(os.Args[2:])
+	}
+
 	// Handle --version
 	if cmd.Version {
 		ShowVersion()
@@ -199,7 +226,12 @@ func Run(cmd *Command) error {
 		return fmt.Errorf("no providers configured")
 	}
 
-	// Switch to the provider
+	// Check if supervisor mode is enabled
+	if cmd.Supervisor {
+		return runSupervisor(cfg, providerName, cmd.ClaudeArgs)
+	}
+
+	// Normal mode: Switch to the provider and run claude
 	fmt.Printf("Launching with provider: %s\n", providerName)
 	mergedSettings, err := provider.Switch(cfg, providerName)
 	if err != nil {

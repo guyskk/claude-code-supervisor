@@ -51,6 +51,15 @@ func GetSettingsPath(providerName string) string {
 	return filepath.Join(GetDir(), fmt.Sprintf("settings-%s.json", providerName))
 }
 
+// GetSupervisorSettingsPath returns the path to settings-{provider}-supervisor.json.
+// This is used for Supervisor mode, which needs a settings file without hooks.
+func GetSupervisorSettingsPath(providerName string) string {
+	if providerName == "" {
+		return filepath.Join(GetDir(), "settings-supervisor.json")
+	}
+	return filepath.Join(GetDir(), fmt.Sprintf("settings-%s-supervisor.json", providerName))
+}
+
 // Load reads and parses the ccc.json configuration file.
 func Load() (*Config, error) {
 	configPath := GetConfigPath()

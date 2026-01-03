@@ -2,7 +2,10 @@
 package provider
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/guyskk/ccc/internal/config"
@@ -146,4 +149,94 @@ func GetBaseURL(settings map[string]interface{}) string {
 // This is a convenience wrapper around config.GetModel.
 func GetModel(settings map[string]interface{}) string {
 	return config.GetModel(settings)
+}
+
+// SwitchWithHook switches to the specified provider and adds Stop hook configuration.
+// It generates two settings files:
+// - settings-{provider}.json (with Stop hook, for Claude)
+// - settings-{provider}-supervisor.json (without hook, for Supervisor)
+func SwitchWithHook(cfg *config.Config, providerName string) (settingsPath string, supervisorSettingsPath string, err error) {
+	if cfg == nil {
+		return "", "", fmt.Errorf("config is nil")
+	}
+
+	// Check if provider exists
+	providerSettings, exists := cfg.Providers[providerName]
+	if !exists {
+		return "", "", fmt.Errorf("provider '%s' not found in configuration", providerName)
+	}
+
+	// Create the merged settings
+	mergedSettings := config.DeepMerge(cfg.Settings, providerSettings)
+
+	// Get ccc absolute path for hook command
+	cccPath, err := os.Executable()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get ccc executable path: %w", err)
+	}
+
+	// Determine settings paths
+	settingsPath = config.GetSettingsPath(providerName)
+	supervisorSettingsPath = config.GetSupervisorSettingsPath(providerName)
+
+	// Build hook command
+	stateDir := filepath.Join(config.GetDir(), "ccc")
+	hookCommand := fmt.Sprintf("%s supervisor-hook --settings %s --state-dir %s",
+		cccPath, supervisorSettingsPath, stateDir)
+
+	// Add Stop hook to merged settings
+	settingsWithHook := make(map[string]interface{})
+	for k, v := range mergedSettings {
+		settingsWithHook[k] = v
+	}
+
+	// Create hooks configuration
+	hooks := map[string]interface{}{
+		"Stop": []map[string]interface{}{
+			{
+				"hooks": []map[string]interface{}{
+					{
+						"type":    "command",
+						"command": hookCommand,
+					},
+				},
+			},
+		},
+	}
+	settingsWithHook["hooks"] = hooks
+
+	// Save settings with hook to settings-{provider}.json
+	settingsData, err := json.MarshalIndent(settingsWithHook, "", "  ")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to marshal settings: %w", err)
+	}
+	if err := os.WriteFile(settingsPath, settingsData, 0644); err != nil {
+		return "", "", fmt.Errorf("failed to write settings: %w", err)
+	}
+
+	// Save supervisor settings (without hook) to settings-{provider}-supervisor.json
+	supervisorData, err := json.MarshalIndent(mergedSettings, "", "  ")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to marshal supervisor settings: %w", err)
+	}
+	if err := os.WriteFile(supervisorSettingsPath, supervisorData, 0644); err != nil {
+		return "", "", fmt.Errorf("failed to write supervisor settings: %w", err)
+	}
+
+	// Clear env field in settings.json to prevent configuration pollution
+	cleared, err := config.ClearEnvInSettings()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to clear env in settings.json: %w", err)
+	}
+	if cleared {
+		fmt.Println("Cleared env field in settings.json to prevent configuration pollution")
+	}
+
+	// Update current_provider in ccc.json
+	cfg.CurrentProvider = providerName
+	if err := config.Save(cfg); err != nil {
+		return "", "", fmt.Errorf("failed to update current provider: %w", err)
+	}
+
+	return settingsPath, supervisorSettingsPath, nil
 }
