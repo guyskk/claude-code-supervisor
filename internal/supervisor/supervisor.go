@@ -49,33 +49,41 @@ func (s *Supervisor) Run() error {
 	fmt.Println("║           Supervisor Mode - Agent Auto-Loop              ║")
 	fmt.Println("╚════════════════════════════════════════════════════════════╝")
 
-	// Read initial user input from stdin
-	initialInput, err := s.readUserInput()
-	if err != nil {
-		return fmt.Errorf("failed to read input: %w", err)
-	}
-	if strings.TrimSpace(initialInput) == "" {
-		return fmt.Errorf("empty input")
-	}
+	// Keep prompting until we get non-empty input
+	for {
+		initialInput, err := s.readUserInput()
+		if err != nil {
+			return fmt.Errorf("failed to read input: %w", err)
+		}
 
-	s.userInputs = append(s.userInputs, initialInput)
+		// If input is cancelled, return
+		if strings.TrimSpace(initialInput) == "" {
+			continue
+		}
+
+		s.userInputs = append(s.userInputs, initialInput)
+		break
+	}
 
 	return s.loop()
 }
 
 // readUserInput reads user input using huh.
 func (s *Supervisor) readUserInput() (string, error) {
+	// Show prompt before form
+	fmt.Print("> ")
+
 	var input string
 
 	// Create a minimal theme with no borders
 	theme := huh.ThemeCharm()
 	theme.Group.Base = lipgloss.NewStyle()
-	theme.Group.Title = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	theme.Group.Title = lipgloss.NewStyle()
 	theme.Blurred.Base = lipgloss.NewStyle()
 	theme.Focused.Base = lipgloss.NewStyle()
 
 	inputField := huh.NewInput().
-		Title("> ").
+		Title("").
 		Value(&input)
 
 	err := huh.NewForm(
@@ -90,12 +98,13 @@ func (s *Supervisor) readUserInput() (string, error) {
 	}
 
 	input = strings.TrimSpace(input)
-	if input == "" {
-		return "", fmt.Errorf("empty input")
+	// Echo the input back (only if not empty)
+	if input != "" {
+		fmt.Printf("\n> %s\n\n", input)
+	} else {
+		fmt.Println()
 	}
 
-	// Echo the input back
-	fmt.Printf("> %s\n\n", input)
 	return input, nil
 }
 
