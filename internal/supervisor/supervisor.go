@@ -64,19 +64,13 @@ func (s *Supervisor) Run() error {
 
 // readUserInput reads multi-line input using huh.
 func (s *Supervisor) readUserInput() (string, error) {
-	fmt.Println()
-
 	var input string
+
 	inputField := huh.NewInput().
 		Title(">").
-		Placeholder("").
-		Value(&input).
-		CharLimit(-1)
+		Value(&input)
 
-	err := huh.NewForm(
-		huh.NewGroup(inputField).WithHide(true),
-	).Run()
-
+	err := huh.Run(inputField)
 	if err != nil {
 		if err == huh.ErrUserAborted {
 			return "", fmt.Errorf("input cancelled")
@@ -84,13 +78,13 @@ func (s *Supervisor) readUserInput() (string, error) {
 		return "", err
 	}
 
-	// Echo the input back to keep it visible
-	fmt.Printf("> %s\n\n", input)
-
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return "", fmt.Errorf("empty input")
 	}
+
+	// Echo the input back
+	fmt.Printf("> %s\n\n", input)
 
 	return input, nil
 }
