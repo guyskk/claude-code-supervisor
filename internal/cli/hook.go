@@ -154,6 +154,9 @@ func RunSupervisorHook(args []string) error {
 
 	// Build claude command
 	// Use --print to get output without entering interactive mode
+	// The prompt is passed as the last argument after --
+	supervisorUserPrompt := "请检查上面的对话，评估任务是否已完成。如果完成，返回 completed=true；如果未完成，返回 completed=false 并在 feedback 中说明需要继续做什么。"
+
 	args2 := []string{
 		"claude",
 		"--print",
@@ -162,14 +165,16 @@ func RunSupervisorHook(args []string) error {
 		"--output-format", "stream-json",
 		"--json-schema", jsonSchema,
 		"--system-prompt", supervisorPrompt,
+		"--", supervisorUserPrompt,
 	}
 
 	// Log the command being executed
-	fmt.Fprintf(os.Stderr, "[ccc supervisor-hook] Executing: claude --print --resume %s --output-format stream-json --json-schema <schema> --system-prompt <prompt>\n", input.SessionID)
+	fmt.Fprintf(os.Stderr, "[ccc supervisor-hook] Executing: claude --print --resume %s --output-format stream-json --json-schema <schema> --system-prompt <prompt> -- <user-prompt>\n", input.SessionID)
 	if logFile != nil {
 		timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
 		fmt.Fprintf(logFile, "[%s] Executing claude command with %d args\n", timestamp, len(args2))
 		fmt.Fprintf(logFile, "[%s] Resume session: %s\n", timestamp, input.SessionID)
+		fmt.Fprintf(logFile, "[%s] User prompt: %s\n", timestamp, supervisorUserPrompt)
 		logFile.Sync()
 	}
 
