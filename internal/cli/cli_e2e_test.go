@@ -1,5 +1,9 @@
-//go:build !windows
-// +build !windows
+//go:build !windows && !ci
+// +build !windows,!ci
+
+// E2E tests require a PTY and may not work reliably in CI environments.
+// Run locally with: go test -v ./internal/cli -run 'TestE2E_'
+// Skip in CI by adding -tags=ci to the go test command.
 
 package cli
 
