@@ -143,6 +143,7 @@ func TestE2E_ProviderSwitch(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt // capture loop variable
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -299,6 +300,7 @@ func TestE2E_ValidateCommand(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt // capture loop variable
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -368,6 +370,7 @@ func TestE2E_ArgPassthrough(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt // capture loop variable
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -433,6 +436,7 @@ func TestE2E_ArgsOnlyNoProvider(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt // capture loop variable
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
