@@ -23,16 +23,19 @@ type StopHookInput struct {
 
 // HookOutput represents the output to stdout.
 type HookOutput struct {
-	Decision string `json:"decision"` // "block" or empty
-	Reason   string `json:"reason,omitempty"`
+	Decision *string `json:"decision"` // "block" or null (undefined allows stop)
+	Reason   string  `json:"reason,omitempty"`
 }
 
 // RunSupervisorHook executes the supervisor-hook subcommand.
 func RunSupervisorHook(args []string) error {
 	// Check if this is a Supervisor's hook call (to avoid infinite loop)
-	// When CCC_SUPERVISOR_HOOK=1 is set, allow stop by outputting nothing
+	// When CCC_SUPERVISOR_HOOK=1 is set, output {"decision": null} to allow stop
 	if os.Getenv("CCC_SUPERVISOR_HOOK") == "1" {
-		// Output nothing to allow stop (decision undefined/null)
+		// Output {"decision": null} to allow stop (decision is null/undefined)
+		output := HookOutput{Decision: nil, Reason: ""}
+		outputJSON, _ := json.Marshal(output)
+		fmt.Println(string(outputJSON))
 		return nil
 	}
 
@@ -304,8 +307,9 @@ func RunSupervisorHook(args []string) error {
 		result.Feedback = "请继续完成任务"
 	}
 
+	block := "block"
 	output := HookOutput{
-		Decision: "block",
+		Decision: &block,
 		Reason:   result.Feedback,
 	}
 	outputJSON, _ := json.Marshal(output)
