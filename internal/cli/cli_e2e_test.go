@@ -12,15 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Netflix/go-expect"
 	"github.com/guyskk/ccc/internal/config"
+	"github.com/twpayne/go-expect"
 )
 
 // TestE2E_Help tests the --help flag
 func TestE2E_Help(t *testing.T) {
 	t.Parallel()
 
-	console, err := expect.NewTestConsole(t, expect.WithDefaultTimeout(5*time.Second))
+	console, err := expect.NewConsole(expect.WithDefaultTimeout(5 * time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,18 +66,28 @@ func TestE2E_Help(t *testing.T) {
 	}
 
 	// Check for help output
-	console.ExpectString("Usage: ccc [provider] [args...]")
-	console.ExpectString("Claude Code Configuration Switcher")
-	console.ExpectString("Commands:")
-	console.ExpectString("Environment Variables:")
-	console.ExpectString("CCC_SUPERVISOR")
+	if _, err := console.ExpectString("Usage: ccc [provider] [args...]"); err != nil {
+		t.Errorf("expected usage string: %v", err)
+	}
+	if _, err := console.ExpectString("Claude Code Configuration Switcher"); err != nil {
+		t.Errorf("expected title: %v", err)
+	}
+	if _, err := console.ExpectString("Commands:"); err != nil {
+		t.Errorf("expected commands section: %v", err)
+	}
+	if _, err := console.ExpectString("Environment Variables:"); err != nil {
+		t.Errorf("expected env vars section: %v", err)
+	}
+	if _, err := console.ExpectString("CCC_SUPERVISOR"); err != nil {
+		t.Errorf("expected CCC_SUPERVISOR: %v", err)
+	}
 }
 
 // TestE2E_Version tests the --version flag
 func TestE2E_Version(t *testing.T) {
 	t.Parallel()
 
-	console, err := expect.NewTestConsole(t, expect.WithDefaultTimeout(5*time.Second))
+	console, err := expect.NewConsole(expect.WithDefaultTimeout(5 * time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +108,9 @@ func TestE2E_Version(t *testing.T) {
 	}
 
 	// Check for version output
-	console.ExpectString("claude-code-config-switcher version")
+	if _, err := console.ExpectString("claude-code-config-switcher version"); err != nil {
+		t.Errorf("expected version string: %v", err)
+	}
 }
 
 // TestE2E_ProviderSwitch tests provider switching
@@ -147,7 +159,7 @@ func TestE2E_ProviderSwitch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			console, err := expect.NewTestConsole(t, expect.WithDefaultTimeout(5*time.Second))
+			console, err := expect.NewConsole(expect.WithDefaultTimeout(5 * time.Second))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -164,7 +176,9 @@ func TestE2E_ProviderSwitch(t *testing.T) {
 			}
 
 			// Should see launching message
-			console.ExpectString("Launching with provider: " + tt.provider)
+			if _, err := console.ExpectString("Launching with provider: " + tt.provider); err != nil {
+				t.Errorf("expected launching message: %v", err)
+			}
 		})
 	}
 }
@@ -204,7 +218,7 @@ func TestE2E_SupervisorMode(t *testing.T) {
 	t.Run("supervisor mode enabled", func(t *testing.T) {
 		t.Parallel()
 
-		console, err := expect.NewTestConsole(t, expect.WithDefaultTimeout(5*time.Second))
+		console, err := expect.NewConsole(expect.WithDefaultTimeout(5 * time.Second))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -223,14 +237,18 @@ func TestE2E_SupervisorMode(t *testing.T) {
 		}
 
 		// Should see supervisor mode message
-		console.ExpectString("[Supervisor Mode enabled]")
-		console.ExpectString("Launching with provider: test1")
+		if _, err := console.ExpectString("[Supervisor Mode enabled]"); err != nil {
+			t.Errorf("expected supervisor mode message: %v", err)
+		}
+		if _, err := console.ExpectString("Launching with provider: test1"); err != nil {
+			t.Errorf("expected launching message: %v", err)
+		}
 	})
 
 	t.Run("supervisor mode disabled", func(t *testing.T) {
 		t.Parallel()
 
-		console, err := expect.NewTestConsole(t, expect.WithDefaultTimeout(5*time.Second))
+		console, err := expect.NewConsole(expect.WithDefaultTimeout(5 * time.Second))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -248,7 +266,9 @@ func TestE2E_SupervisorMode(t *testing.T) {
 		}
 
 		// Should NOT see supervisor mode message
-		console.ExpectString("Launching with provider: test1")
+		if _, err := console.ExpectString("Launching with provider: test1"); err != nil {
+			t.Errorf("expected launching message: %v", err)
+		}
 	})
 }
 
@@ -304,7 +324,7 @@ func TestE2E_ValidateCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			console, err := expect.NewTestConsole(t, expect.WithDefaultTimeout(10*time.Second))
+			console, err := expect.NewConsole(expect.WithDefaultTimeout(10 * time.Second))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -321,7 +341,9 @@ func TestE2E_ValidateCommand(t *testing.T) {
 			}
 
 			// Should see validation output
-			console.ExpectString(tt.expected)
+			if _, err := console.ExpectString(tt.expected); err != nil {
+				t.Errorf("expected %q: %v", tt.expected, err)
+			}
 		})
 	}
 }
@@ -374,7 +396,7 @@ func TestE2E_ArgPassthrough(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			console, err := expect.NewTestConsole(t, expect.WithDefaultTimeout(5*time.Second))
+			console, err := expect.NewConsole(expect.WithDefaultTimeout(5 * time.Second))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -390,7 +412,9 @@ func TestE2E_ArgPassthrough(t *testing.T) {
 				t.Fatalf("failed to start command: %v", err)
 			}
 
-			console.ExpectString(tt.expected)
+			if _, err := console.ExpectString(tt.expected); err != nil {
+				t.Errorf("expected %q: %v", tt.expected, err)
+			}
 		})
 	}
 }
@@ -440,7 +464,7 @@ func TestE2E_ArgsOnlyNoProvider(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			console, err := expect.NewTestConsole(t, expect.WithDefaultTimeout(5*time.Second))
+			console, err := expect.NewConsole(expect.WithDefaultTimeout(5 * time.Second))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -457,7 +481,9 @@ func TestE2E_ArgsOnlyNoProvider(t *testing.T) {
 			}
 
 			// Should launch with current provider and pass args to claude
-			console.ExpectString("Launching with provider: test1")
+			if _, err := console.ExpectString("Launching with provider: test1"); err != nil {
+				t.Errorf("expected launching message: %v", err)
+			}
 		})
 	}
 }
@@ -473,7 +499,7 @@ func TestE2E_HookSubcommand(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	console, err := expect.NewTestConsole(t, expect.WithDefaultTimeout(5*time.Second))
+	console, err := expect.NewConsole(expect.WithDefaultTimeout(5 * time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -496,11 +522,17 @@ func TestE2E_HookSubcommand(t *testing.T) {
 
 	// Send test input
 	testInput := `{"session_id":"test-session-123","stop_hook_active":true}`
-	console.SendLine(testInput)
+	if _, err := console.SendLine(testInput); err != nil {
+		t.Errorf("failed to send input: %v", err)
+	}
 
 	// Should see hook invocation logs
-	console.ExpectString("[ccc supervisor-hook]")
-	console.ExpectString("session_id: test-session-123")
+	if _, err := console.ExpectString("[ccc supervisor-hook]"); err != nil {
+		t.Errorf("expected hook log: %v", err)
+	}
+	if _, err := console.ExpectString("session_id: test-session-123"); err != nil {
+		t.Errorf("expected session_id: %v", err)
+	}
 }
 
 // TestE2E_HelpShowsProviders tests that help shows available providers
@@ -537,7 +569,7 @@ func TestE2E_HelpShowsProviders(t *testing.T) {
 	config.GetDirFunc = func() string { return testConfigDir }
 	defer func() { config.GetDirFunc = oldGetDir }()
 
-	console, err := expect.NewTestConsole(t, expect.WithDefaultTimeout(5*time.Second))
+	console, err := expect.NewConsole(expect.WithDefaultTimeout(5 * time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -554,10 +586,18 @@ func TestE2E_HelpShowsProviders(t *testing.T) {
 	}
 
 	// Help should show available providers
-	console.ExpectString("Available Providers:")
-	console.ExpectString("test1")
-	console.ExpectString("test2")
-	console.ExpectString("test3")
+	if _, err := console.ExpectString("Available Providers:"); err != nil {
+		t.Errorf("expected Available Providers: %v", err)
+	}
+	if _, err := console.ExpectString("test1"); err != nil {
+		t.Errorf("expected test1: %v", err)
+	}
+	if _, err := console.ExpectString("test2"); err != nil {
+		t.Errorf("expected test2: %v", err)
+	}
+	if _, err := console.ExpectString("test3"); err != nil {
+		t.Errorf("expected test3: %v", err)
+	}
 }
 
 // TestE2E_Timeout tests command timeout handling
@@ -593,7 +633,10 @@ func TestE2E_Timeout(t *testing.T) {
 
 	done := make(chan error)
 	go func() {
-		_, _ = console.ExpectString("claude-code-config-switcher version")
+		if _, err := console.ExpectString("claude-code-config-switcher version"); err != nil {
+			done <- err
+			return
+		}
 		done <- cmd.Wait()
 	}()
 

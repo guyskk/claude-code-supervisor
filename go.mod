@@ -2,8 +2,10 @@ module github.com/guyskk/ccc
 
 go 1.21
 
+require github.com/twpayne/go-expect v0.0.2-0.20241130000624-916db2914efd
+
 require (
-	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
-	github.com/creack/pty v1.1.17
-	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
+	github.com/creack/pty/v2 v2.0.0-20231209135443-03db72c7b76c // indirect
+	github.com/muesli/cancelreader v0.2.2 // indirect
+	golang.org/x/sys v0.15.0 // indirect
 )
