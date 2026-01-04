@@ -4,7 +4,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/guyskk/ccc/internal/config"
@@ -241,7 +240,7 @@ func Run(cmd *Command) error {
 
 	// Run in supervisor or normal mode
 	if supervisorEnabled {
-		return runSupervisor(cfg, providerName, cmd.ClaudeArgs)
+		return runSupervisor(cfg, cmd.ClaudeArgs)
 	}
 
 	// Normal mode: Switch to the provider and run claude
@@ -312,30 +311,6 @@ func determineProvider(cmd *Command, cfg *config.Config) string {
 	}
 
 	return ""
-}
-
-// runClaude executes the claude command.
-// This replaces the current process with claude using syscall.Exec.
-func runClaude(cfg *config.Config, settings map[string]interface{}, args []string) error {
-	// Find claude executable path
-	claudePath, err := exec.LookPath("claude")
-	if err != nil {
-		return fmt.Errorf("claude not found in PATH: %w", err)
-	}
-
-	// Build arguments (argv[0] must be the program name)
-	execArgs := []string{"claude"}
-	if len(cfg.ClaudeArgs) > 0 {
-		execArgs = append(execArgs, cfg.ClaudeArgs...)
-	}
-	execArgs = append(execArgs, args...)
-
-	// Build environment variables
-	authToken := provider.GetAuthToken(settings)
-	env := append(os.Environ(), fmt.Sprintf("ANTHROPIC_AUTH_TOKEN=%s", authToken))
-
-	// Execute the process (replaces current process, does not return on success)
-	return executeProcess(claudePath, execArgs, env)
 }
 
 // Execute is the main entry point for the CLI.

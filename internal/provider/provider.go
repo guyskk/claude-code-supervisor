@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/guyskk/ccc/internal/config"
@@ -163,9 +162,8 @@ func SwitchWithHook(cfg *config.Config, providerName string) error {
 		return fmt.Errorf("failed to get ccc executable path: %w", err)
 	}
 
-	// Build hook command
-	stateDir := filepath.Join(config.GetDir(), "ccc")
-	hookCommand := fmt.Sprintf("%s supervisor-hook --state-dir %s", cccPath, stateDir)
+	// Build hook command (no --state-dir parameter, state dir is handled internally)
+	hookCommand := fmt.Sprintf("%s supervisor-hook", cccPath)
 
 	// Add Stop hook to merged settings
 	settingsWithHook := make(map[string]interface{})
