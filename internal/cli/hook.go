@@ -253,12 +253,9 @@ func RunSupervisorHook(args []string) error {
 					if msg.Type == "text" && msg.Content != "" {
 						fmt.Fprintf(os.Stderr, "%s\n", msg.Content)
 					}
-					// Parse result
-					if msg.Type == "result" && msg.Result != "" {
-						sr, parseErr := supervisor.ParseSupervisorResult(msg.Result)
-						if parseErr == nil {
-							result = sr
-						}
+					// Extract structured output from result message
+					if msg.Type == "result" && msg.StructuredOutput != nil {
+						result = msg.StructuredOutput
 					}
 				}
 			}

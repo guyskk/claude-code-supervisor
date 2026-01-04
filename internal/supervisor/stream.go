@@ -8,10 +8,11 @@ import (
 
 // StreamMessage represents a message from claude stream-json output.
 type StreamMessage struct {
-	Type      string `json:"type"`
-	SessionID string `json:"session_id,omitempty"`
-	Content   string `json:"content,omitempty"`
-	Result    string `json:"result,omitempty"` // For type="result" messages
+	Type             string            `json:"type"`
+	SessionID        string            `json:"session_id,omitempty"`
+	Content          string            `json:"content,omitempty"`
+	Result           string            `json:"result,omitempty"`            // Text result for type="result" messages
+	StructuredOutput *SupervisorResult `json:"structured_output,omitempty"` // Structured output for type="result" messages
 }
 
 // ParseStreamJSONLine parses a single line of stream-json output.
