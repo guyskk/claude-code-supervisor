@@ -6,8 +6,8 @@
 
 #### 1. 修改 provider 包支持生成带 hook 的 settings
 - [x] 在 `internal/provider/provider.go` 中添加 `SwitchWithHook()` 函数
-- [x] 生成 `settings-{provider}.json` 时添加 Stop hook 配置
-- [x] 生成独立的 `settings-{provider}-supervisor.json`（无 hook）
+- [x] 生成 `settings.json` 时添加 Stop hook 配置
+- [x] 使用单一 `settings.json` 文件（不再需要独立的 supervisor settings）
 - [x] 获取 ccc 绝对路径（使用 `os.Executable()`）
 - [x] 单元测试：验证生成的 settings 文件结构正确
 
@@ -23,10 +23,11 @@
 
 #### 3. 创建 hook 子命令
 - [x] 创建 `internal/cli/hook.go`
-- [x] 解析参数：`--settings`, `--state-dir`
+- [x] 解析参数：`--state-dir`
+- [x] 检查 `CCC_SUPERVISOR_HOOK=1` 环境变量，如存在则跳过执行
 - [x] 读取 stdin JSON（StopHookInput 结构）
 - [x] 检查迭代次数限制（count >= 10 则返回空）
-- [x] 构建 Supervisor claude 命令
+- [x] 构建 Supervisor claude 命令（设置 `CCC_SUPERVISOR_HOOK=1` 环境变量）
 - [x] 处理 stream-json 输出
 - [x] 输出 JSON 决定到 stdout
 - [x] 单元测试：验证输入输出处理
@@ -40,12 +41,12 @@
 
 ### Phase 3: CLI 集成
 
-#### 5. 修改 CLI 支持 --supervisor 参数
+#### 5. 修改 CLI 支持 Supervisor Mode
 - [x] 在 `internal/cli/cli.go` 中修改 `Command` 结构
-- [x] 解析 `--supervisor` 参数
+- [x] 通过 `CCC_SUPERVISOR=1` 环境变量启用 Supervisor Mode
 - [x] 修改 `Run()` 函数的 supervisor 分支
 - [x] 调用 `provider.SwitchWithHook()` 生成配置
-- [x] 使用 `syscall.Exec` 启动 claude
+- [x] 使用 `syscall.Exec` 启动 claude（不带 `--settings` 参数）
 - [x] 更新帮助信息
 
 #### 6. 更新 Supervisor Prompt
@@ -100,3 +101,6 @@
 2. **状态文件清理**：暂不实现自动清理，用户可以手动删除 `.claude/ccc/` 目录
 3. **错误处理**：hook 中的错误应该输出到 stderr，不影响 Claude 的正常运行
 4. **手动测试**：需要实际配置 claude 和 API 密钥才能完整测试
+5. **单一配置文件**：使用 `settings.json` 统一配置，不再需要 `settings-{provider}-supervisor.json`
+6. **环境变量防死循环**：使用 `CCC_SUPERVISOR_HOOK=1` 环境变量防止 Supervisor 的 hook 触发死循环
+7. **无 --settings 参数**：启动 claude 时不再传递 `--settings` 参数，直接使用默认的 `settings.json`

@@ -21,20 +21,22 @@
 ### 架构设计
 
 ```
-用户执行: ccc --supervisor
+用户执行: CCC_SUPERVISOR=1 ccc kimi
 
-1. ccc 生成两个 settings 文件：
-   - settings-{provider}.json (包含 Stop hook，供 Claude 使用)
-   - settings-{provider}-supervisor.json (无 hook，供 Supervisor 使用)
+1. ccc 生成 settings.json（包含 Stop hook）
 
-2. ccc 启动 claude --settings settings-{provider}.json
+2. ccc 启动 claude（无 --settings 参数，使用默认 settings.json）
 
 3. Claude 工作流程：
    用户输入 → Agent 执行 → 触发 Stop hook
      ↓
-   ccc supervisor-hook 被调用
+   ccc supervisor-hook 被调用（检查 CCC_SUPERVISOR_HOOK=1? 否）
      ↓
-   调用 claude --fork-session --resume <session_id> (Supervisor)
+   调用 claude --print --resume <session_id>（设置 CCC_SUPERVISOR_HOOK=1）
+     ↓
+   Supervisor 检查 → 触发 Stop hook
+     ↓
+   ccc supervisor-hook 被调用（检查 CCC_SUPERVISOR_HOOK=1? 是，跳过）
      ↓
    解析 Supervisor 结构化输出
      ↓
@@ -47,17 +49,23 @@
 
 ### 关键技术点
 
-1. **Stop Hook 配置**：在 settings-{provider}.json 中添加 Stop hook
+1. **Stop Hook 配置**：在 settings.json 中添加 Stop hook
 2. **supervisor-hook 子命令**：处理 hook 事件，调用 Supervisor
 3. **结构化输出**：使用 `--json-schema` 让 Supervisor 返回 JSON
 4. **状态管理**：用文件记录 session 的迭代次数（防止无限循环）
 5. **输出保存**：将 Supervisor 原始输出保存到 jsonl 文件
+6. **环境变量控制**：使用 `CCC_SUPERVISOR_HOOK=1` 避免 Supervisor 的 hook 死循环
 
 ### 防止无限循环
 
-- 记录每个 session 的迭代次数到 `.claude/ccc/supervisor-{session_id}.json`
-- 当迭代次数 >= 10 时，允许 Agent 停止
-- `stop_hook_active` 字段用于检测是否已有 hook 在运行
+1. **环境变量机制**：
+   - Supervisor hook 调用 claude 时设置 `CCC_SUPERVISOR_HOOK=1`
+   - Supervisor 的 claude 继承此环境变量
+   - 当 Supervisor stop 触发 hook 时，检测到环境变量，直接返回（允许 stop）
+
+2. **迭代次数限制**：
+   - 记录每个 session 的迭代次数到 `.claude/ccc/supervisor-{session_id}.json`
+   - 当迭代次数 >= 10 时，允许 Agent 停止
 
 ### JSON Schema 输出
 
@@ -72,20 +80,23 @@ Supervisor 返回的结构：
 ## Impact
 
 - **新增命令**：`ccc supervisor-hook` 子命令
-- **修改文件**：`settings-{provider}.json` 添加 hook 配置
+- **环境变量**：
+  - `CCC_SUPERVISOR=1`：启用 Supervisor Mode
+  - `CCC_SUPERVISOR_HOOK=1`：内部使用，避免 hook 死循环
+- **配置文件**：`settings.json`（统一使用单一配置文件）
 - **新增文件**：
-  - `settings-{provider}-supervisor.json` (Supervisor 专用配置)
   - `.claude/ccc/supervisor-{session_id}.json` (状态管理)
   - `.claude/ccc/supervisor-{session_id}-output.jsonl` (输出保存)
 
 ## Affected Specs
 
-- `cli`：新增 `--supervisor` 参数和 `supervisor-hook` 子命令
+- `cli`：新增 `CCC_SUPERVISOR` 环境变量支持和 `supervisor-hook` 子命令
 - 新增 `supervisor-hooks` spec：定义 Supervisor Mode 的行为
 
 ## Files Changed
 
 - `internal/cli/cli.go`：修改 supervisor 模式分支
+- `internal/cli/exec.go`：Supervisor 模式启动 claude
 - `internal/cli/hook.go` (新增)：supervisor-hook 子命令
-- `internal/provider/provider.go`：支持生成带 hook 的 settings 和 supervisor 专用 settings
-- `internal/supervisor/`：移除或重构（不再需要独立循环管理）
+- `internal/provider/provider.go`：支持生成带 hook 的 settings
+- `internal/config/config.go`：简化配置路径（统一使用 settings.json）

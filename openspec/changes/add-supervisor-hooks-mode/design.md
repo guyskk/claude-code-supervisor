@@ -6,19 +6,18 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ 用户执行: ccc --supervisor                                        │
+│ 用户执行: CCC_SUPERVISOR=1 ccc kimi                              │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ 1. provider.SwitchWithHook(providerName, enableHook bool)       │
-│    - 生成 settings-{provider}.json (包含 Stop hook)             │
-│    - 生成 settings-{provider}-supervisor.json (无 hook)         │
+│ 1. provider.SwitchWithHook(providerName)                        │
+│    - 生成 settings.json (包含 Stop hook)                        │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ 2. syscall.Exec("claude", "--settings", settings-{provider}.json)│
+│ 2. syscall.Exec("claude") (无 --settings 参数)                  │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -31,9 +30,11 @@
 │                              ▼                                   │
 │ ┌─────────────────────────────────────────────────────────────┐ │
 │ │ ccc supervisor-hook                                         │ │
+│ │ - 检查 CCC_SUPERVISOR_HOOK=1? 否，继续                       │ │
 │ │ - 读取 stdin JSON (session_id, stop_hook_active)            │ │
 │ │ - 检查迭代次数 (>=10 则返回空)                               │ │
-│ │ - 调用 claude --fork-session --resume <session_id>          │ │
+│ │ - 调用 claude --print --resume <session_id>                 │ │
+│ │   (设置 CCC_SUPERVISOR_HOOK=1 环境变量)                      │ │
 │ │ - 解析结构化输出                                             │ │
 │ │ - 输出 JSON: {"decision":"block","reason":"反馈"}           │ │
 │ └─────────────────────────────────────────────────────────────┘ │
@@ -51,35 +52,41 @@
 
 ### Settings 文件结构
 
-**settings-{provider}.json** (Claude 使用)：
+**settings.json** (唯一的配置文件)：
 ```json
 {
   "permissions": {...},
   "env": {...},
+  "disableAllHooks": false,
+  "allowManagedHooksOnly": false,
   "hooks": {
     "Stop": [{
       "hooks": [{
         "type": "command",
-        "command": "/abs/path/ccc supervisor-hook --settings /path/to/settings-{provider}-supervisor.json --state-dir .claude/ccc"
+        "command": "/abs/path/ccc supervisor-hook --state-dir .claude/ccc"
       }]
     }]
   }
 }
 ```
 
-**settings-{provider}-supervisor.json** (Supervisor 使用)：
-```json
-{
-  "permissions": {...},
-  "env": {...}
-  // 没有 hooks，避免递归
-}
+### 防止 Hook 死循环
+
+使用环境变量 `CCC_SUPERVISOR_HOOK=1` 来区分 Agent 和 Supervisor 的 hook 调用：
+
+```
+Agent claude (无 CCC_SUPERVISOR_HOOK)
+    └─> stop 触发 hook
+        └─> ccc supervisor-hook (检测：无 CCC_SUPERVISOR_HOOK，继续)
+            └─> 启动 Supervisor claude (设置 CCC_SUPERVISOR_HOOK=1)
+                └─> stop 触发 hook
+                    └─> ccc supervisor-hook (检测：有 CCC_SUPERVISOR_HOOK=1，跳过)
+                        └─> 直接返回，允许 stop
 ```
 
 ### supervisor-hook 子命令
 
 **参数**：
-- `--settings`: supervisor 使用的 settings 文件路径
 - `--state-dir`: 状态文件目录（默认 `.claude/ccc`）
 
 **输入 (stdin)**：
@@ -122,16 +129,21 @@
 
 ```bash
 claude \
-  --settings settings-{provider}-supervisor.json \
-  --fork-session \
+  --print \
   --resume <session_id> \
+  --verbose \
   --output-format stream-json \
   --json-schema '{"type":"object","properties":{"completed":{"type":"boolean"},"feedback":{"type":"string"}},"required":["completed","feedback"]}' \
   --system-prompt "$(cat ~/.claude/SUPERVISOR.md)"
 ```
 
+**环境变量**：
+```bash
+CCC_SUPERVISOR_HOOK=1
+```
+
 **关键参数**：
-- `--fork-session`: 在当前 session 的 fork 中运行（不污染主 session）
+- `--print`: 非交互模式，获取输出后退出
 - `--resume <session_id>`: 恢复指定的 session
 - `--output-format stream-json`: 输出流式 JSON（便于解析）
 - `--json-schema`: 强制结构化输出
@@ -162,6 +174,18 @@ for _, line := range lines {
 
 ## 防止无限循环
 
+### 环境变量检查
+
+```go
+// hook.go 开头
+if os.Getenv("CCC_SUPERVISOR_HOOK") == "1" {
+    fmt.Fprintf(os.Stderr, "[ccc supervisor-hook] Skipping (CCC_SUPERVISOR_HOOK=1), allowing stop\n")
+    return nil
+}
+```
+
+### 迭代次数限制
+
 ```go
 // 检查迭代次数
 state := loadState(sessionID)
@@ -175,7 +199,7 @@ saveState(sessionID, state)
 
 ## Supervisor Prompt
 
-从 `~/.claude/SUPERVISOR.md` 读取，新增内容：
+从 `~/.claude/SUPERVISOR.md` 读取，包含：
 
 ```markdown
 ## 输出格式要求
@@ -209,26 +233,31 @@ saveState(sessionID, state)
 1. **简化实现**：不需要自己管理 Agent 循环
 2. **更好的集成**：利用 Claude 原生 Hook 机制
 3. **用户体验更好**：直接与 Claude 交互，无中转
+4. **单一配置文件**：只需要 settings.json，简化管理
+5. **环境变量控制**：简洁的死循环防护机制
 
 ### 缺点
 1. **依赖 Claude Hooks**：如果 Hooks 机制变化，需要适配
-2. **文件管理**：需要管理多个 settings 文件和状态文件
-3. **路径问题**：需要确保 hook 命令中的绝对路径正确
+2. **路径问题**：需要确保 hook 命令中的绝对路径正确
 
 ### 决策
 优点明显大于缺点。Hooks 是 Claude 官方机制，相对稳定。
+环境变量控制比双配置文件更简洁。
 
 ## Testing Considerations
 
 1. **单元测试**：
    - `supervisor-hook` 子命令的输入输出处理
+   - 环境变量检测和跳过逻辑
    - 状态文件的读写
    - stream-json 的解析
 
 2. **集成测试**：
    - 完整的 supervisor mode 流程
    - 迭代次数限制
+   - 环境变量传递
 
 3. **Mock 策略**：
    - claude 命令执行可以 mock
    - 文件系统操作可以 mock
+   - 环境变量可以在测试中设置

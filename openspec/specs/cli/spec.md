@@ -1,7 +1,8 @@
 # cli Specification
 
 ## Purpose
-TBD - created by archiving change refactor-modular-architecture. Update Purpose after archive.
+
+定义 ccc 命令行工具的交互行为和参数解析规范。包括基本命令、参数传递、帮助信息显示、版本信息显示以及 Supervisor Mode 相关的命令行行为。
 ## Requirements
 ### Requirement: 命令行参数解析
 
@@ -66,4 +67,63 @@ TBD - created by archiving change refactor-modular-architecture. Update Purpose 
 - **GIVEN** 版本为 "v0.1.2"，构建时间为 "2024-01-15T10:30:00Z"
 - **WHEN** 用户请求版本信息
 - **THEN** 应当显示 "claude-code-config-switcher version v0.1.2 (built at 2024-01-15T10:30:00Z)"
+
+### Requirement: Supervisor Mode 命令行
+
+系统 SHALL 支持通过环境变量启用 Supervisor Mode。
+
+#### Scenario: 环境变量启用 Supervisor Mode
+- **GIVEN** 环境变量 `CCC_SUPERVISOR=1` 已设置
+- **WHEN** 用户执行 `ccc kimi`
+- **THEN** 应当启用 Supervisor Mode
+- **AND** 应当生成带 Stop hook 的 `settings.json`
+- **AND** 应当启动 claude（不带 `--settings` 参数）
+
+#### Scenario: 普通模式启动
+- **GIVEN** 环境变量 `CCC_SUPERVISOR` 未设置
+- **WHEN** 用户执行 `ccc kimi`
+- **THEN** 应当使用普通模式
+- **AND** 应当生成 `settings.json`（不带 hook）
+- **AND** 应当启动 claude（不带 `--settings` 参数）
+
+#### Scenario: 传递参数到 claude
+- **GIVEN** 用户执行 `ccc kimi --debug /path/to/project`
+- **WHEN** 系统启动 claude
+- **THEN** 应当将 `--debug /path/to/project` 传递给 claude
+- **AND** claude 启动时不应包含 `--settings` 参数
+
+### Requirement: supervisor-hook 子命令
+
+系统 SHALL 识别并处理 `supervisor-hook` 子命令。
+
+#### Scenario: 识别 supervisor-hook 子命令
+- **GIVEN** 用户执行 `ccc supervisor-hook --state-dir .claude/ccc`
+- **WHEN** 系统解析命令
+- **THEN** 应当识别为 supervisor-hook 子命令
+- **AND** 应当调用 `RunSupervisorHook()` 函数
+
+#### Scenario: 环境变量检查
+- **GIVEN** 环境变量 `CCC_SUPERVISOR_HOOK=1` 已设置
+- **WHEN** 执行 `ccc supervisor-hook`
+- **THEN** 应当跳过 hook 执行
+- **AND** 应当输出跳过信息到 stderr
+- **AND** 应当返回空内容到 stdout
+
+### Requirement: Claude 启动
+
+系统 SHALL 使用 syscall.Exec 替换进程启动 claude。
+
+#### Scenario: 普通模式启动 claude
+- **GIVEN** 用户执行 `ccc kimi`
+- **WHEN** 系统启动 claude
+- **THEN** 应当使用 `syscall.Exec` 替换当前进程
+- **AND** 应当设置 `ANTHROPIC_AUTH_TOKEN` 环境变量
+- **AND** 命令行不应包含 `--settings` 参数
+
+#### Scenario: Supervisor Mode 启动 claude
+- **GIVEN** 环境变量 `CCC_SUPERVISOR=1` 已设置
+- **WHEN** 系统启动 claude
+- **THEN** 应当先调用 `provider.SwitchWithHook()` 生成配置
+- **AND** 应当使用 `syscall.Exec` 替换当前进程
+- **AND** 命令行不应包含 `--settings` 参数
 
