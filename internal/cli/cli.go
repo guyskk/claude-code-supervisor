@@ -238,24 +238,8 @@ func Run(cmd *Command) error {
 	// Check if supervisor mode is enabled via environment variable
 	supervisorEnabled := os.Getenv("CCC_SUPERVISOR") == "1"
 
-	// Run in supervisor or normal mode
-	if supervisorEnabled {
-		return runSupervisor(cfg, cmd.ClaudeArgs)
-	}
-
-	// Normal mode: Switch to the provider and run claude
-	fmt.Printf("Launching with provider: %s\n", providerName)
-	mergedSettings, err := provider.Switch(cfg, providerName)
-	if err != nil {
-		return fmt.Errorf("error switching provider: %w", err)
-	}
-
-	// Run claude with the settings file
-	if err := runClaude(cfg, mergedSettings, cmd.ClaudeArgs); err != nil {
-		return fmt.Errorf("error running claude: %w", err)
-	}
-
-	return nil
+	// Run claude with the provider (handles both normal and supervisor mode)
+	return runClaude(cfg, providerName, cmd.ClaudeArgs, supervisorEnabled)
 }
 
 // runValidate executes the validate command.
