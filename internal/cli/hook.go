@@ -154,18 +154,17 @@ func RunSupervisorHook(args []string) error {
 
 	// Build claude command
 	// Use --print to get output without entering interactive mode
-	// The prompt is passed as the last argument after --
+	// The prompt is passed as the first positional argument (after all flags)
 	supervisorUserPrompt := "请检查上面的对话，评估任务是否已完成。如果完成，返回 completed=true；如果未完成，返回 completed=false 并在 feedback 中说明需要继续做什么。"
 
 	args2 := []string{
 		"claude",
 		"--print",
 		"--resume", input.SessionID,
-		"--verbose",
 		"--output-format", "stream-json",
 		"--json-schema", jsonSchema,
 		"--system-prompt", supervisorPrompt,
-		"--", supervisorUserPrompt,
+		supervisorUserPrompt, // Prompt as positional argument
 	}
 
 	// Log the command being executed
@@ -209,8 +208,29 @@ func RunSupervisorHook(args []string) error {
 		}
 	}()
 
-	// Read and process stream-json output
+	// Read stdout and stderr concurrently
 	var result *supervisor.SupervisorResult
+	var stderrContent strings.Builder
+
+	// Start goroutine to read stderr
+	stderrDone := make(chan struct{})
+	go func() {
+		defer close(stderrDone)
+		stderrBuf := make([]byte, 4096)
+		for {
+			n, err := stderr.Read(stderrBuf)
+			if n > 0 {
+				content := string(stderrBuf[:n])
+				stderrContent.WriteString(content)
+				fmt.Fprintf(os.Stderr, "%s", content)
+			}
+			if err == io.EOF || err != nil {
+				break
+			}
+		}
+	}()
+
+	// Read and process stream-json output from stdout
 	stdoutBuf := make([]byte, 4096)
 	for {
 		n, err := stdout.Read(stdoutBuf)
@@ -251,28 +271,20 @@ func RunSupervisorHook(args []string) error {
 		}
 	}
 
-	// Copy stderr to our stderr
-	stderrBuf := make([]byte, 4096)
-	for {
-		n, err := stderr.Read(stderrBuf)
-		if n > 0 {
-			fmt.Fprintf(os.Stderr, "%s", string(stderrBuf[:n]))
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			break
-		}
-	}
+	// Wait for stderr goroutine to finish
+	<-stderrDone
 
 	// Wait for command to finish
-	if err := cmd.Wait(); err != nil {
-		fmt.Fprintf(os.Stderr, "Claude command finished with error: %v\n", err)
-		// Log to file
+	cmdErr := cmd.Wait()
+	if cmdErr != nil {
+		fmt.Fprintf(os.Stderr, "Claude command finished with error: %v\n", cmdErr)
+		// Log to file with stderr content for debugging
 		if logFile != nil {
 			timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-			fmt.Fprintf(logFile, "[%s] Claude command finished with error: %v\n", timestamp, err)
+			fmt.Fprintf(logFile, "[%s] Claude command finished with error: %v\n", timestamp, cmdErr)
+			if stderrContent.Len() > 0 {
+				fmt.Fprintf(logFile, "[%s] Stderr: %s\n", timestamp, stderrContent.String())
+			}
 			logFile.Sync()
 		}
 	} else {
