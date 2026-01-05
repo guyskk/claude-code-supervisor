@@ -33,15 +33,12 @@ func runClaude(cfg *config.Config, providerName string, claudeArgs []string, sup
 		fmt.Printf("[Supervisor Mode enabled]\n")
 		fmt.Printf("Launching with provider: %s\n", providerName)
 
-		// Show log file paths
+		// Show log file path
 		stateDir, err := supervisor.GetStateDir()
 		if err == nil {
-			fmt.Printf("\n[Supervisor Mode] 日志文件:\n")
-			fmt.Printf("  State 目录: %s\n", stateDir)
-			fmt.Printf("  Hook 调用日志: %s/hook-invocation.log\n", stateDir)
-			fmt.Printf("  Session 日志: %s/supervisor-<session-id>-output.jsonl\n", stateDir)
-			fmt.Printf("\n  提示: 按 Ctrl+O 切换到 verbose 模式查看 hook 执行状态\n")
-			fmt.Printf("  提示: 在新窗口运行 'tail -f %s/hook-invocation.log' 实时查看日志\n\n", stateDir)
+			fmt.Printf("\n[Supervisor Mode] 日志文件: %s/supervisor-<session-id>.log\n", stateDir)
+			fmt.Printf("提示: 按 Ctrl+O 切换到 verbose 模式查看 hook 执行状态\n")
+			fmt.Printf("提示: 在新窗口运行 'tail -f %s/supervisor-*.log' 实时查看日志\n\n", stateDir)
 		}
 
 		// Get merged settings for auth token

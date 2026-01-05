@@ -50,51 +50,33 @@ func RunSupervisorHook(args []string) error {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
 
-	// Open log file for writing
-	logPath := filepath.Join(stateDir, "hook-invocation.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err == nil {
-		defer logFile.Close()
-		timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] supervisor-hook invoked\n", timestamp)
-		fmt.Fprintf(logFile, "[%s] args: %v\n", timestamp, args)
-		fmt.Fprintf(logFile, "[%s] stateDir: %s\n", timestamp, stateDir)
-		logFile.Sync()
-	}
-
-	// Read stdin JSON
+	// Read stdin JSON first to get session_id
 	var input StopHookInput
 	decoder := json.NewDecoder(os.Stdin)
 	if err := decoder.Decode(&input); err != nil {
-		if logFile != nil {
-			timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-			fmt.Fprintf(logFile, "[%s] ERROR: failed to parse stdin JSON: %v\n", timestamp, err)
-			logFile.Sync()
-		}
 		return fmt.Errorf("failed to parse stdin JSON: %w", err)
 	}
 
 	if input.SessionID == "" {
-		if logFile != nil {
-			timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-			fmt.Fprintf(logFile, "[%s] ERROR: session_id is empty in input\n", timestamp)
-			logFile.Sync()
-		}
 		return fmt.Errorf("session_id is required in input")
 	}
 
-	// Log the input
-	if logFile != nil {
-		timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("=", 60))
-		fmt.Fprintf(logFile, "[SUPERVISOR HOOK] 开始执行\n")
-		fmt.Fprintf(logFile, "%s\n\n", strings.Repeat("=", 60))
-		inputJSON, _ := json.Marshal(input)
-		fmt.Fprintf(logFile, "[%s] stdin input: %s\n", timestamp, string(inputJSON))
-		fmt.Fprintf(logFile, "[%s] session_id: %s\n", timestamp, input.SessionID)
-		fmt.Fprintf(logFile, "[%s] stop_hook_active: %v\n", timestamp, input.StopHookActive)
-		logFile.Sync()
+	// Session-specific log file: supervisor-{session-id}.log
+	sessionLogFile := filepath.Join(stateDir, fmt.Sprintf("supervisor-%s.log", input.SessionID))
+	logFile, err := os.OpenFile(sessionLogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open session log file: %w", err)
 	}
+	defer logFile.Close()
+
+	timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
+	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("=", 70))
+	fmt.Fprintf(logFile, "[SUPERVISOR HOOK] 开始执行\n")
+	fmt.Fprintf(logFile, "%s\n", strings.Repeat("=", 70))
+	fmt.Fprintf(logFile, "[%s] Session ID: %s\n", timestamp, input.SessionID)
+	fmt.Fprintf(logFile, "[%s] Stop Hook Active: %v\n", timestamp, input.StopHookActive)
+	fmt.Fprintf(logFile, "[%s] Args: %v\n", timestamp, args)
+	logFile.Sync()
 
 	// Output to stderr (visible in verbose mode with Ctrl+O)
 	fmt.Fprintf(os.Stderr, "\n%s\n", strings.Repeat("=", 60))
@@ -102,6 +84,7 @@ func RunSupervisorHook(args []string) error {
 	fmt.Fprintf(os.Stderr, "%s\n", strings.Repeat("=", 60))
 	fmt.Fprintf(os.Stderr, "Session ID: %s\n", input.SessionID)
 	fmt.Fprintf(os.Stderr, "Stop Hook Active: %v\n", input.StopHookActive)
+	fmt.Fprintf(os.Stderr, "日志: %s\n", sessionLogFile)
 
 	// Check iteration count limit
 	shouldContinue, count, err := supervisor.ShouldContinue(input.SessionID, supervisor.DefaultMaxIterations)
@@ -112,11 +95,9 @@ func RunSupervisorHook(args []string) error {
 	if !shouldContinue {
 		// Max iterations reached, allow stop
 		fmt.Fprintf(os.Stderr, "\n[STOP] 最大迭代次数 (%d) 已达到，允许停止\n", count)
-		if logFile != nil {
-			timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-			fmt.Fprintf(logFile, "[%s] Max iterations (%d) reached, allowing stop\n", timestamp, count)
-			logFile.Sync()
-		}
+		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
+		fmt.Fprintf(logFile, "[%s] Max iterations (%d) reached, allowing stop\n", timestamp, count)
+		logFile.Sync()
 		return nil
 	}
 
@@ -126,11 +107,9 @@ func RunSupervisorHook(args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to increment count: %v\n", err)
 	} else {
 		fmt.Fprintf(os.Stderr, "迭代次数: %d/%d\n", newCount, supervisor.DefaultMaxIterations)
-		if logFile != nil {
-			timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-			fmt.Fprintf(logFile, "[%s] Iteration count: %d/%d\n", timestamp, newCount, supervisor.DefaultMaxIterations)
-			logFile.Sync()
-		}
+		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
+		fmt.Fprintf(logFile, "[%s] Iteration count: %d/%d\n", timestamp, newCount, supervisor.DefaultMaxIterations)
+		logFile.Sync()
 	}
 
 	// Get supervisor prompt
@@ -160,33 +139,19 @@ func RunSupervisorHook(args []string) error {
 
 	// Log the command being executed
 	fmt.Fprintf(os.Stderr, "\n[SUPERVISOR] 正在审查工作...\n")
-	fmt.Fprintf(os.Stderr, "提示: Supervisor 运行在独立会话中，详情请查看日志文件\n")
-	outputFile := filepath.Join(stateDir, fmt.Sprintf("supervisor-%s-output.jsonl", input.SessionID))
-	fmt.Fprintf(os.Stderr, "日志: %s\n\n", outputFile)
+	fmt.Fprintf(os.Stderr, "详情请查看日志文件: %s\n\n", sessionLogFile)
 
-	if logFile != nil {
-		timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] Executing claude command with %d args\n", timestamp, len(args2))
-		fmt.Fprintf(logFile, "[%s] Resume session: %s\n", timestamp, input.SessionID)
-		fmt.Fprintf(logFile, "[%s] Output file: %s\n", timestamp, outputFile)
-		logFile.Sync()
-	}
+	timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
+	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("-", 70))
+	fmt.Fprintf(logFile, "[SUPERVISOR] 执行审查\n")
+	fmt.Fprintf(logFile, "%s\n", strings.Repeat("-", 70))
+	fmt.Fprintf(logFile, "[%s] Command: claude --fork-session --resume %s\n", timestamp, input.SessionID)
+	fmt.Fprintf(logFile, "[%s] Args: %d\n", timestamp, len(args2))
+	logFile.Sync()
 
 	// Execute command with CCC_SUPERVISOR_HOOK=1 to prevent infinite loop
 	cmd := exec.Command(args2[0], args2[1:]...)
 	cmd.Env = append(os.Environ(), "CCC_SUPERVISOR_HOOK=1")
-
-	// Open output file for appending (defined before cmd.Start())
-	outF, err := os.OpenFile(outputFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to open output file: %v\n", err)
-		outF = nil
-	}
-	defer func() {
-		if outF != nil {
-			outF.Close()
-		}
-	}()
 
 	// Capture stdout for parsing
 	stdout, err := cmd.StdoutPipe()
@@ -229,12 +194,8 @@ func RunSupervisorHook(args []string) error {
 	for stdoutScanner.Scan() {
 		line := stdoutScanner.Text()
 
-		// Write raw line to output file
-		if outF != nil {
-			if _, writeErr := outF.WriteString(line + "\n"); writeErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to write output: %v\n", writeErr)
-			}
-		}
+		// Write raw line to session log file
+		fmt.Fprintf(logFile, "[%s] > %s\n", time.Now().Format("2006-01-02T15:04:05.000Z"), line)
 
 		// Try to parse the line as JSON
 		msg, parseErr := supervisor.ParseStreamJSONLine(line)
@@ -252,11 +213,9 @@ func RunSupervisorHook(args []string) error {
 
 	if scanErr := stdoutScanner.Err(); scanErr != nil {
 		fmt.Fprintf(os.Stderr, "Error reading stdout: %v\n", scanErr)
-		if logFile != nil {
-			timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-			fmt.Fprintf(logFile, "[%s] Error reading stdout: %v\n", timestamp, scanErr)
-			logFile.Sync()
-		}
+		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
+		fmt.Fprintf(logFile, "[%s] Error reading stdout: %v\n", timestamp, scanErr)
+		logFile.Sync()
 	}
 
 	// Wait for stderr goroutine to finish
@@ -266,54 +225,43 @@ func RunSupervisorHook(args []string) error {
 	cmdErr := cmd.Wait()
 	if cmdErr != nil {
 		fmt.Fprintf(os.Stderr, "Claude command finished with error: %v\n", cmdErr)
-		if logFile != nil {
-			timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-			fmt.Fprintf(logFile, "[%s] Claude command finished with error: %v\n", timestamp, cmdErr)
-			if stderrContent.Len() > 0 {
-				fmt.Fprintf(logFile, "[%s] Stderr: %s\n", timestamp, stderrContent.String())
-			}
-			logFile.Sync()
+		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
+		fmt.Fprintf(logFile, "[%s] Claude command finished with error: %v\n", timestamp, cmdErr)
+		if stderrContent.Len() > 0 {
+			fmt.Fprintf(logFile, "[%s] Stderr: %s\n", timestamp, stderrContent.String())
 		}
+		logFile.Sync()
 	} else {
-		if logFile != nil {
-			timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-			fmt.Fprintf(logFile, "[%s] Claude command completed successfully\n", timestamp)
-			logFile.Sync()
-		}
+		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
+		fmt.Fprintf(logFile, "[%s] Claude command completed successfully\n", timestamp)
+		logFile.Sync()
 	}
 
 	// Process result
 	fmt.Fprintf(os.Stderr, "\n%s\n", strings.Repeat("=", 60))
+	timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
+	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("=", 70))
+	fmt.Fprintf(logFile, "[RESULT] 审查结果\n")
+	fmt.Fprintf(logFile, "%s\n", strings.Repeat("=", 70))
+
 	if result == nil {
 		// No result found, allow stop
 		fmt.Fprintf(os.Stderr, "[RESULT] 未找到 Supervisor 结果，允许停止\n")
-		if logFile != nil {
-			timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-			fmt.Fprintf(logFile, "[%s] No result found, allowing stop\n", timestamp)
-			logFile.Sync()
-		}
+		fmt.Fprintf(logFile, "[%s] No result found, allowing stop\n", timestamp)
+		logFile.Sync()
 		return nil
 	}
 
 	// Log the result
-	if logFile != nil {
-		timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("=", 60))
-		fmt.Fprintf(logFile, "[RESULT] Supervisor Result\n")
-		fmt.Fprintf(logFile, "%s\n\n", strings.Repeat("=", 60))
-		fmt.Fprintf(logFile, "[%s] completed: %v\n", timestamp, result.Completed)
-		fmt.Fprintf(logFile, "[%s] feedback: %s\n", timestamp, result.Feedback)
-		logFile.Sync()
-	}
+	fmt.Fprintf(logFile, "[%s] completed: %v\n", timestamp, result.Completed)
+	fmt.Fprintf(logFile, "[%s] feedback: %s\n", timestamp, result.Feedback)
+	logFile.Sync()
 
 	if result.Completed {
 		// Task completed, allow stop
 		fmt.Fprintf(os.Stderr, "[RESULT] 任务已完成，允许停止\n")
-		if logFile != nil {
-			timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-			fmt.Fprintf(logFile, "[%s] Task completed, allowing stop\n", timestamp)
-			logFile.Sync()
-		}
+		fmt.Fprintf(logFile, "[%s] Task completed, allowing stop\n", timestamp)
+		logFile.Sync()
 		return nil
 	}
 
@@ -335,12 +283,9 @@ func RunSupervisorHook(args []string) error {
 	fmt.Fprintf(os.Stderr, "Agent 将根据反馈继续工作\n")
 	fmt.Fprintf(os.Stderr, "%s\n\n", strings.Repeat("=", 60))
 
-	if logFile != nil {
-		timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] Blocking with feedback: %s\n", timestamp, result.Feedback)
-		fmt.Fprintf(logFile, "[%s] Output: %s\n", timestamp, string(outputJSON))
-		logFile.Sync()
-	}
+	fmt.Fprintf(logFile, "[%s] Blocking with feedback: %s\n", timestamp, result.Feedback)
+	fmt.Fprintf(logFile, "[%s] Output: %s\n", timestamp, string(outputJSON))
+	logFile.Sync()
 
 	return nil
 }
