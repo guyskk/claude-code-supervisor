@@ -183,6 +183,7 @@ func SwitchWithHook(cfg *config.Config, providerName string) error {
 					{
 						"type":    "command",
 						"command": hookCommand,
+						"timeout": 600,
 					},
 				},
 			},
