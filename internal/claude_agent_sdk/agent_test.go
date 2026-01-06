@@ -2,11 +2,19 @@
 package claude_agent_sdk
 
 import (
+	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/guyskk/ccc/internal/logger"
 )
 
 func TestNewAgent(t *testing.T) {
+	// Skip test if claude is not installed (e.g., in CI)
+	if _, err := exec.LookPath("claude"); err != nil {
+		t.Skip("claude executable not found in PATH, skipping test")
+	}
+
 	tests := []struct {
 		name    string
 		config  *Config
@@ -58,7 +66,14 @@ func TestNewAgent(t *testing.T) {
 }
 
 func TestAgent_buildArgs(t *testing.T) {
-	agent, _ := NewAgent(nil)
+	// Create a mock agent without checking for claude executable
+	agent := &Agent{
+		config: &Config{
+			ClaudePath: "claude",
+			Timeout:    10 * time.Minute,
+		},
+		logger: logger.NewNopLogger(),
+	}
 
 	tests := []struct {
 		name string
