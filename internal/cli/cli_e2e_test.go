@@ -552,10 +552,10 @@ func TestE2E_HookSubcommand(t *testing.T) {
 	}
 
 	// Should see hook invocation logs
-	if _, err := console.ExpectString("[ccc supervisor-hook]"); err != nil {
+	if _, err := console.ExpectString("[SUPERVISOR HOOK]"); err != nil {
 		t.Errorf("expected hook log: %v", err)
 	}
-	if _, err := console.ExpectString("session_id: test-session-123"); err != nil {
+	if _, err := console.ExpectString("Session ID: test-session-123"); err != nil {
 		t.Errorf("expected session_id: %v", err)
 	}
 
