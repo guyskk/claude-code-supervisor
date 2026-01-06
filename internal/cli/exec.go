@@ -46,9 +46,9 @@ func runClaude(cfg *config.Config, providerName string, claudeArgs []string, sup
 		if err == nil {
 			logPath := fmt.Sprintf("%s/supervisor-%s.log", stateDir, sessionID)
 			fmt.Printf("\n[Supervisor Mode] Session ID: %s\n", sessionID)
-			fmt.Printf("[Supervisor Mode] 日志文件: %s\n", logPath)
-			fmt.Printf("提示: 按 Ctrl+O 切换到 verbose 模式查看 hook 执行状态\n")
-			fmt.Printf("提示: 在新窗口运行 'tail -f %s' 实时查看日志\n\n", logPath)
+			fmt.Printf("[Supervisor Mode] Log file: %s\n", logPath)
+			fmt.Printf("Tip: Press Ctrl+O to switch to verbose mode and see hook execution status\n")
+			fmt.Printf("Tip: Run 'tail -f %s' in a new window to view logs in real-time\n\n", logPath)
 
 			// Pre-create log directory and file so tail -f works immediately
 			if err := os.MkdirAll(stateDir, 0755); err == nil {

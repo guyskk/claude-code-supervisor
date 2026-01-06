@@ -4,6 +4,7 @@ package supervisor
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // StreamMessage represents a message from claude stream-json output.
@@ -17,7 +18,7 @@ type StreamMessage struct {
 
 // ParseStreamJSONLine parses a single line of stream-json output.
 func ParseStreamJSONLine(line string) (*StreamMessage, error) {
-	line = trimSpace(line)
+	line = strings.TrimSpace(line)
 	if line == "" {
 		return nil, nil
 	}
@@ -28,25 +29,6 @@ func ParseStreamJSONLine(line string) (*StreamMessage, error) {
 	}
 
 	return &msg, nil
-}
-
-// trimSpace is a local implementation of strings.TrimSpace to avoid import.
-func trimSpace(s string) string {
-	start := 0
-	for start < len(s) {
-		if s[start] != ' ' && s[start] != '\t' && s[start] != '\n' && s[start] != '\r' {
-			break
-		}
-		start++
-	}
-	end := len(s)
-	for end > start {
-		if s[end-1] != ' ' && s[end-1] != '\t' && s[end-1] != '\n' && s[end-1] != '\r' {
-			break
-		}
-		end--
-	}
-	return s[start:end]
 }
 
 // SupervisorResult represents the structured output from Supervisor.

@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +14,9 @@ import (
 	"github.com/guyskk/ccc/internal/supervisor"
 )
 
+// JSONSchema for structured output from Supervisor.
+const supervisorJSONSchema = `{"type":"object","properties":{"completed":{"type":"boolean"},"feedback":{"type":"string"}},"required":["completed","feedback"]}`
+
 // StopHookInput represents the input from Stop hook.
 type StopHookInput struct {
 	SessionID      string `json:"session_id"`
@@ -22,19 +24,23 @@ type StopHookInput struct {
 }
 
 // HookOutput represents the output to stdout.
+// When Decision is nil/empty, the decision field is omitted to allow stop.
 type HookOutput struct {
-	Decision *string `json:"decision"` // "block" or null (undefined allows stop)
-	Reason   string  `json:"reason,omitempty"`
+	Decision string `json:"decision,omitempty"` // "block" or omitted (allows stop)
+	Reason   string `json:"reason,omitempty"`
 }
 
 // RunSupervisorHook executes the supervisor-hook subcommand.
 func RunSupervisorHook(args []string) error {
 	// Check if this is a Supervisor's hook call (to avoid infinite loop)
-	// When CCC_SUPERVISOR_HOOK=1 is set, output {"decision": null} to allow stop
+	// When CCC_SUPERVISOR_HOOK=1 is set, output empty JSON to allow stop
 	if os.Getenv("CCC_SUPERVISOR_HOOK") == "1" {
-		// Output {"decision": null} to allow stop (decision is null/undefined)
-		output := HookOutput{Decision: nil, Reason: ""}
-		outputJSON, _ := json.Marshal(output)
+		// Output empty object to allow stop (no decision field = allow stop)
+		output := HookOutput{}
+		outputJSON, err := json.Marshal(output)
+		if err != nil {
+			return fmt.Errorf("failed to marshal hook output: %w", err)
+		}
 		fmt.Println(string(outputJSON))
 		return nil
 	}
@@ -78,7 +84,7 @@ func RunSupervisorHook(args []string) error {
 
 	timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
 	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("=", 70))
-	fmt.Fprintf(logFile, "[SUPERVISOR HOOK] 开始执行\n")
+	fmt.Fprintf(logFile, "[SUPERVISOR HOOK] Starting\n")
 	fmt.Fprintf(logFile, "%s\n", strings.Repeat("=", 70))
 	fmt.Fprintf(logFile, "[%s] Session ID: %s\n", timestamp, sessionID)
 	fmt.Fprintf(logFile, "[%s] Stop Hook Active: %v\n", timestamp, stopHookActive)
@@ -87,11 +93,11 @@ func RunSupervisorHook(args []string) error {
 
 	// Output to stderr (visible in verbose mode with Ctrl+O)
 	fmt.Fprintf(os.Stderr, "\n%s\n", strings.Repeat("=", 60))
-	fmt.Fprintf(os.Stderr, "[SUPERVISOR HOOK] 开始执行\n")
+	fmt.Fprintf(os.Stderr, "[SUPERVISOR HOOK] Starting\n")
 	fmt.Fprintf(os.Stderr, "%s\n", strings.Repeat("=", 60))
 	fmt.Fprintf(os.Stderr, "Session ID: %s\n", sessionID)
 	fmt.Fprintf(os.Stderr, "Stop Hook Active: %v\n", stopHookActive)
-	fmt.Fprintf(os.Stderr, "日志: %s\n", sessionLogFile)
+	fmt.Fprintf(os.Stderr, "Log file: %s\n", sessionLogFile)
 
 	// Check iteration count limit
 	shouldContinue, count, err := supervisor.ShouldContinue(sessionID, supervisor.DefaultMaxIterations)
@@ -101,7 +107,7 @@ func RunSupervisorHook(args []string) error {
 	}
 	if !shouldContinue {
 		// Max iterations reached, allow stop
-		fmt.Fprintf(os.Stderr, "\n[STOP] 最大迭代次数 (%d) 已达到，允许停止\n", count)
+		fmt.Fprintf(os.Stderr, "\n[STOP] Max iterations (%d) reached, allowing stop\n", count)
 		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
 		fmt.Fprintf(logFile, "[%s] Max iterations (%d) reached, allowing stop\n", timestamp, count)
 		logFile.Sync()
@@ -113,7 +119,7 @@ func RunSupervisorHook(args []string) error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to increment count: %v\n", err)
 	} else {
-		fmt.Fprintf(os.Stderr, "迭代次数: %d/%d\n", newCount, supervisor.DefaultMaxIterations)
+		fmt.Fprintf(os.Stderr, "Iteration count: %d/%d\n", newCount, supervisor.DefaultMaxIterations)
 		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
 		fmt.Fprintf(logFile, "[%s] Iteration count: %d/%d\n", timestamp, newCount, supervisor.DefaultMaxIterations)
 		logFile.Sync()
@@ -126,9 +132,6 @@ func RunSupervisorHook(args []string) error {
 		supervisorPrompt = getDefaultSupervisorPrompt()
 	}
 
-	// JSON Schema for structured output
-	jsonSchema := `{"type":"object","properties":{"completed":{"type":"boolean"},"feedback":{"type":"string"}},"required":["completed","feedback"]}`
-
 	// Build claude command using --fork-session (not --print)
 	// Note: NOT using --system-prompt - supervisor prompt is part of user prompt
 	args2 := []string{
@@ -137,17 +140,17 @@ func RunSupervisorHook(args []string) error {
 		"--resume", sessionID,
 		"--verbose", // Required for stream-json output format
 		"--output-format", "stream-json",
-		"--json-schema", jsonSchema,
+		"--json-schema", supervisorJSONSchema,
 		supervisorPrompt, // User prompt as positional argument
 	}
 
 	// Log the command being executed
-	fmt.Fprintf(os.Stderr, "\n[SUPERVISOR] 正在审查工作...\n")
-	fmt.Fprintf(os.Stderr, "详情请查看日志文件: %s\n\n", sessionLogFile)
+	fmt.Fprintf(os.Stderr, "\n[SUPERVISOR] Reviewing work...\n")
+	fmt.Fprintf(os.Stderr, "See log file for details: %s\n\n", sessionLogFile)
 
 	timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
 	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("-", 70))
-	fmt.Fprintf(logFile, "[SUPERVISOR] 执行审查\n")
+	fmt.Fprintf(logFile, "[SUPERVISOR] Executing review\n")
 	fmt.Fprintf(logFile, "%s\n", strings.Repeat("-", 70))
 	fmt.Fprintf(logFile, "[%s] Command: claude --fork-session --resume %s\n", timestamp, sessionID)
 	fmt.Fprintf(logFile, "[%s] Args: %d\n", timestamp, len(args2))
@@ -187,7 +190,8 @@ func RunSupervisorHook(args []string) error {
 				stderrContent.WriteString(content)
 				fmt.Fprintf(os.Stderr, "%s", content)
 			}
-			if err == io.EOF || err != nil {
+			if err != nil {
+				// Break on error (including EOF)
 				break
 			}
 		}
@@ -245,12 +249,12 @@ func RunSupervisorHook(args []string) error {
 	fmt.Fprintf(os.Stderr, "\n%s\n", strings.Repeat("=", 60))
 	timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
 	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("=", 70))
-	fmt.Fprintf(logFile, "[RESULT] 审查结果\n")
+	fmt.Fprintf(logFile, "[RESULT] Review result\n")
 	fmt.Fprintf(logFile, "%s\n", strings.Repeat("=", 70))
 
 	if result == nil {
 		// No result found, allow stop
-		fmt.Fprintf(os.Stderr, "[RESULT] 未找到 Supervisor 结果，允许停止\n")
+		fmt.Fprintf(os.Stderr, "[RESULT] No supervisor result found, allowing stop\n")
 		fmt.Fprintf(logFile, "[%s] No result found, allowing stop\n", timestamp)
 		logFile.Sync()
 		return nil
@@ -263,7 +267,7 @@ func RunSupervisorHook(args []string) error {
 
 	if result.Completed {
 		// Task completed, allow stop
-		fmt.Fprintf(os.Stderr, "[RESULT] 任务已完成，允许停止\n")
+		fmt.Fprintf(os.Stderr, "[RESULT] Task completed, allowing stop\n")
 		fmt.Fprintf(logFile, "[%s] Task completed, allowing stop\n", timestamp)
 		logFile.Sync()
 		return nil
@@ -271,20 +275,22 @@ func RunSupervisorHook(args []string) error {
 
 	// Task not completed, block with feedback
 	if result.Feedback == "" {
-		result.Feedback = "请继续完成任务"
+		result.Feedback = "Please continue completing the task"
 	}
 
-	block := "block"
 	output := HookOutput{
-		Decision: &block,
+		Decision: "block",
 		Reason:   result.Feedback,
 	}
-	outputJSON, _ := json.Marshal(output)
+	outputJSON, err := json.Marshal(output)
+	if err != nil {
+		return fmt.Errorf("failed to marshal hook output: %w", err)
+	}
 	fmt.Println(string(outputJSON))
 
-	fmt.Fprintf(os.Stderr, "[RESULT] 任务未完成\n")
+	fmt.Fprintf(os.Stderr, "[RESULT] Task not completed\n")
 	fmt.Fprintf(os.Stderr, "Feedback: %s\n", result.Feedback)
-	fmt.Fprintf(os.Stderr, "Agent 将根据反馈继续工作\n")
+	fmt.Fprintf(os.Stderr, "Agent will continue working based on feedback\n")
 	fmt.Fprintf(os.Stderr, "%s\n\n", strings.Repeat("=", 60))
 
 	fmt.Fprintf(logFile, "[%s] Blocking with feedback: %s\n", timestamp, result.Feedback)
