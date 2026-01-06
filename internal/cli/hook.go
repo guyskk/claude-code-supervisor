@@ -2,20 +2,22 @@
 package cli
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
+	"github.com/guyskk/ccc/internal/claude_agent_sdk"
+	"github.com/guyskk/ccc/internal/config"
+	"github.com/guyskk/ccc/internal/logger"
 	"github.com/guyskk/ccc/internal/supervisor"
 )
 
-// JSONSchema for structured output from Supervisor.
-const supervisorJSONSchema = `{"type":"object","properties":{"completed":{"type":"boolean"},"feedback":{"type":"string"}},"required":["completed","feedback"]}`
+const (
+	// supervisorJSONSchema is the JSON schema for structured output from Supervisor.
+	supervisorJSONSchema = `{"type":"object","properties":{"completed":{"type":"boolean"},"feedback":{"type":"string"}},"required":["completed","feedback"]}`
+)
 
 // StopHookInput represents the input from Stop hook.
 type StopHookInput struct {
@@ -35,7 +37,6 @@ func RunSupervisorHook(args []string) error {
 	// Check if this is a Supervisor's hook call (to avoid infinite loop)
 	// When CCC_SUPERVISOR_HOOK=1 is set, output empty JSON to allow stop
 	if os.Getenv("CCC_SUPERVISOR_HOOK") == "1" {
-		// Output empty object to allow stop (no decision field = allow stop)
 		output := HookOutput{}
 		outputJSON, err := json.Marshal(output)
 		if err != nil {
@@ -45,250 +46,189 @@ func RunSupervisorHook(args []string) error {
 		return nil
 	}
 
+	// Load supervisor configuration
+	supervisorCfg, err := config.LoadSupervisorConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load supervisor config: %w", err)
+	}
+
+	// Create logger
+	logLevel := logger.LevelInfo
+	switch supervisorCfg.LogLevel {
+	case "debug":
+		logLevel = logger.LevelDebug
+	case "info":
+		logLevel = logger.LevelInfo
+	case "warn":
+		logLevel = logger.LevelWarn
+	case "error":
+		logLevel = logger.LevelError
+	}
+
 	// Get supervisor ID: from environment variable
 	supervisorID := os.Getenv("CCC_SUPERVISOR_ID")
 	if supervisorID == "" {
 		return fmt.Errorf("CCC_SUPERVISOR_ID is required from env var")
 	}
 
-	// Session-specific log file: supervisor-{id}.log
+	// Setup session-specific log file
 	stateDir, err := supervisor.GetStateDir()
 	if err != nil {
 		return fmt.Errorf("failed to get state directory: %w", err)
 	}
-	// Ensure state directory exists
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
 	logFilePath := filepath.Join(stateDir, fmt.Sprintf("supervisor-%s.log", supervisorID))
+
+	// Create file logger
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open supervisor log file: %w", err)
 	}
 	defer logFile.Close()
-	timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("=", 70))
-	fmt.Fprintf(logFile, "[SUPERVISOR HOOK] Starting %s\n", supervisorID)
-	logFile.Sync()
 
+	fileLogger := logger.NewLogger(logFile, logLevel).With(
+		logger.StringField("supervisor_id", supervisorID),
+	)
+
+	fileLogger.Info("supervisor hook started",
+		logger.StringField("args", strings.Join(args, " ")),
+	)
+
+	// Parse stdin input
 	var input StopHookInput
 	decoder := json.NewDecoder(os.Stdin)
 	if err := decoder.Decode(&input); err != nil {
 		return fmt.Errorf("failed to parse stdin JSON: %w", err)
 	}
 	sessionID := input.SessionID
-	stopHookActive := input.StopHookActive
 	if sessionID == "" {
 		return fmt.Errorf("session_id is required from stdin")
 	}
-	fmt.Fprintf(logFile, "%s\n", strings.Repeat("=", 70))
-	fmt.Fprintf(logFile, "[%s] Session ID: %s\n", timestamp, sessionID)
-	fmt.Fprintf(logFile, "[%s] Stop Hook Active: %v\n", timestamp, stopHookActive)
-	fmt.Fprintf(logFile, "[%s] Args: %v\n", timestamp, args)
-	logFile.Sync()
 
-	// Log input as formatted JSON
+	// Log input
 	inputJSON, _ := json.MarshalIndent(input, "", "  ")
-	fmt.Fprintf(logFile, "[%s] Input:\n%s\n\n", timestamp, string(inputJSON))
-	logFile.Sync()
+	fileLogger.Debug("hook input", logger.StringField("input", string(inputJSON)))
 
-	// Check iteration count limit
-	shouldContinue, count, err := supervisor.ShouldContinue(sessionID, supervisor.DefaultMaxIterations)
+	// Check iteration count limit using configured max_iterations
+	maxIterations := supervisorCfg.MaxIterations
+	shouldContinue, count, err := supervisor.ShouldContinue(sessionID, maxIterations)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error checking state: %v\n", err)
-		// Continue anyway
+		fileLogger.Warn("failed to check state", logger.StringField("error", err.Error()))
 	}
 	if !shouldContinue {
-		// Max iterations reached, allow stop
+		fileLogger.Warn("max iterations reached",
+			logger.IntField("count", count),
+			logger.IntField("max", maxIterations),
+		)
 		fmt.Fprintf(os.Stderr, "\n[STOP] Max iterations (%d) reached, allowing stop\n", count)
-		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] Max iterations (%d) reached, allowing stop\n", timestamp, count)
-		logFile.Sync()
 		return nil
 	}
 
 	// Increment count
 	newCount, err := supervisor.IncrementCount(sessionID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to increment count: %v\n", err)
+		fileLogger.Warn("failed to increment count", logger.StringField("error", err.Error()))
 	} else {
-		fmt.Fprintf(os.Stderr, "Iteration count: %d/%d\n", newCount, supervisor.DefaultMaxIterations)
-		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] Iteration count: %d/%d\n", timestamp, newCount, supervisor.DefaultMaxIterations)
-		logFile.Sync()
+		fileLogger.Info("iteration count",
+			logger.IntField("count", newCount),
+			logger.IntField("max", maxIterations),
+		)
+		fmt.Fprintf(os.Stderr, "Iteration count: %d/%d\n", newCount, maxIterations)
 	}
 
 	// Get supervisor prompt
-	supervisorPrompt, err := getSupervisorPrompt()
+	supervisorPrompt, err := getSupervisorPrompt(supervisorCfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to read supervisor prompt: %v\n", err)
+		fileLogger.Warn("failed to read supervisor prompt", logger.StringField("error", err.Error()))
 		supervisorPrompt = getDefaultSupervisorPrompt()
 	}
 
-	// Log the supervisor prompt
-	timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("-", 70))
-	fmt.Fprintf(logFile, "[SUPERVISOR PROMPT]\n")
-	fmt.Fprintf(logFile, "%s\n", strings.Repeat("-", 70))
-	fmt.Fprintf(logFile, "%s\n", supervisorPrompt)
-	fmt.Fprintf(logFile, "%s\n", strings.Repeat("-", 70))
-	logFile.Sync()
+	fileLogger.Debug("supervisor prompt loaded",
+		logger.IntField("prompt_length", len(supervisorPrompt)),
+	)
 
-	// Build claude command using --fork-session (not --print)
-	// Note: NOT using --system-prompt - supervisor prompt is part of user prompt
-	args2 := []string{
-		"claude",
-		"-p",
-		"--fork-session", // Create child session instead of --print
-		"--resume", sessionID,
-		"--verbose", // Required for stream-json output format
-		"--output-format", "stream-json",
-		"--json-schema", supervisorJSONSchema,
-		supervisorPrompt, // User prompt as positional argument
+	// Create claude agent
+	agent, err := claude_agent_sdk.NewAgent(&claude_agent_sdk.Config{
+		Timeout: supervisorCfg.Timeout(),
+		Logger:  fileLogger,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create claude agent: %w", err)
 	}
-	args2Str := strings.Join(args2[:len(args2)-1], " ")
 
-	// Log the command being executed
+	// Inform user
 	fmt.Fprintf(os.Stderr, "\n[SUPERVISOR] Reviewing work...\n")
 	fmt.Fprintf(os.Stderr, "See log file for details: %s\n\n", logFilePath)
 
-	timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("-", 70))
-	fmt.Fprintf(logFile, "[SUPERVISOR] Executing review\n")
-	fmt.Fprintf(logFile, "%s\n", strings.Repeat("-", 70))
-	fmt.Fprintf(logFile, "[%s] Command: %s\n", timestamp, args2Str)
-	fmt.Fprintf(logFile, "[%s] Args: %d\n", timestamp, len(args2))
-	logFile.Sync()
+	fileLogger.Info("starting supervisor review")
 
-	// Execute command with CCC_SUPERVISOR_HOOK=1 to prevent infinite loop
-	cmd := exec.Command(args2[0], args2[1:]...)
-	cmd.Env = append(os.Environ(), "CCC_SUPERVISOR_HOOK=1")
+	// Run supervisor via claude agent
+	opts := claude_agent_sdk.RunOptions{
+		SessionID:    sessionID,
+		ForkSession:  true,
+		Prompt:       supervisorPrompt,
+		OutputFormat: "stream-json",
+		JSONSchema:   supervisorJSONSchema,
+		Env:          []string{"CCC_SUPERVISOR_HOOK=1"},
+	}
 
-	// Capture stdout for parsing
-	stdout, err := cmd.StdoutPipe()
+	result, err := agent.Run(nil, opts)
 	if err != nil {
-		return fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stderr pipe: %w", err)
+		fileLogger.Error("claude agent run failed", logger.StringField("error", err.Error()))
+		return fmt.Errorf("claude agent run failed: %w", err)
 	}
 
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start claude command: %w", err)
-	}
-
-	// Read stdout and stderr concurrently
-	var result *supervisor.SupervisorResult
-	var stderrContent strings.Builder
-
-	// Start goroutine to read stderr
-	stderrDone := make(chan struct{})
-	go func() {
-		defer close(stderrDone)
-		stderrBuf := make([]byte, 4096)
-		for {
-			n, err := stderrPipe.Read(stderrBuf)
-			if n > 0 {
-				content := string(stderrBuf[:n])
-				stderrContent.WriteString(content)
-				fmt.Fprintf(os.Stderr, "%s", content)
+	fileLogger.Info("supervisor review completed",
+		logger.StringField("duration", result.Duration.String()),
+		logger.IntField("success", func() int {
+			if result.Success {
+				return 1
+			} else {
+				return 0
 			}
-			if err != nil {
-				// Break on error (including EOF)
-				break
-			}
+		}()),
+	)
+
+	// Extract structured output
+	var supervisorResult *claude_agent_sdk.SupervisorResult
+	if result.StructuredOutput != nil {
+		supervisorResult, err = claude_agent_sdk.ParseSupervisorResult(result.StructuredOutput)
+		if err != nil {
+			fileLogger.Warn("failed to parse supervisor result",
+				logger.StringField("error", err.Error()),
+			)
 		}
-	}()
-
-	// Read stdout line by line using bufio.Scanner for proper line handling
-	stdoutScanner := bufio.NewScanner(stdout)
-	for stdoutScanner.Scan() {
-		line := stdoutScanner.Text()
-
-		// Write raw line to session log file
-		fmt.Fprintf(logFile, "[%s] > %s\n", time.Now().Format("2006-01-02T15:04:05.000Z"), line)
-
-		// Try to parse the line as JSON
-		msg, parseErr := supervisor.ParseStreamJSONLine(line)
-		if parseErr == nil && msg != nil {
-			// Output text content to stderr
-			if msg.Type == "text" && msg.Content != "" {
-				fmt.Fprintf(os.Stderr, "%s\n", msg.Content)
-			}
-			// Extract structured output from result message
-			if msg.Type == "result" && msg.StructuredOutput != nil {
-				result = msg.StructuredOutput
-				err := cmd.Process.Kill()
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error cancelling command: %v\n", err)
-				}
-			}
-		}
-	}
-
-	if scanErr := stdoutScanner.Err(); scanErr != nil {
-		fmt.Fprintf(os.Stderr, "Error reading stdout: %v\n", scanErr)
-		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] Error reading stdout: %v\n", timestamp, scanErr)
-		logFile.Sync()
-	}
-
-	// Wait for stderr goroutine to finish
-	<-stderrDone
-
-	// Wait for command to finish
-	cmdErr := cmd.Wait()
-	if cmdErr != nil {
-		fmt.Fprintf(os.Stderr, "Claude command finished with error: %v\n", cmdErr)
-		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] Claude command finished with error: %v\n", timestamp, cmdErr)
-		if stderrContent.Len() > 0 {
-			fmt.Fprintf(logFile, "[%s] Stderr: %s\n", timestamp, stderrContent.String())
-		}
-		logFile.Sync()
-	} else {
-		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] Claude command completed successfully\n", timestamp)
-		logFile.Sync()
 	}
 
 	// Process result
 	fmt.Fprintf(os.Stderr, "\n%s\n", strings.Repeat("=", 60))
-	timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("=", 70))
-	fmt.Fprintf(logFile, "[RESULT] Review result\n")
-	fmt.Fprintf(logFile, "%s\n", strings.Repeat("=", 70))
 
-	if result == nil {
-		// No result found, allow stop
+	if supervisorResult == nil {
+		fileLogger.Warn("no supervisor result found, allowing stop")
 		fmt.Fprintf(os.Stderr, "[RESULT] No supervisor result found, allowing stop\n")
-		fmt.Fprintf(logFile, "[%s] No result found, allowing stop\n", timestamp)
-		logFile.Sync()
 		return nil
 	}
 
-	// Log the result as formatted JSON
-	resultJSON, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Fprintf(logFile, "[%s] Result:\n%s\n\n", timestamp, string(resultJSON))
-	logFile.Sync()
+	// Log the result
+	resultJSON, _ := json.MarshalIndent(supervisorResult, "", "  ")
+	fileLogger.Info("supervisor result", logger.StringField("result", string(resultJSON)))
 
-	if result.Completed {
-		// Task completed, allow stop
+	if supervisorResult.Completed {
+		fileLogger.Info("task completed, allowing stop")
 		fmt.Fprintf(os.Stderr, "[RESULT] Task completed, allowing stop\n")
-		fmt.Fprintf(logFile, "[%s] Task completed, allowing stop\n", timestamp)
-		logFile.Sync()
 		return nil
 	}
 
 	// Task not completed, block with feedback
-	if result.Feedback == "" {
-		result.Feedback = "Please continue completing the task"
+	if supervisorResult.Feedback == "" {
+		supervisorResult.Feedback = "Please continue completing the task"
 	}
 
 	output := HookOutput{
 		Decision: "block",
-		Reason:   result.Feedback,
+		Reason:   supervisorResult.Feedback,
 	}
 	outputJSON, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
@@ -297,26 +237,23 @@ func RunSupervisorHook(args []string) error {
 	fmt.Println(string(outputJSON))
 
 	fmt.Fprintf(os.Stderr, "[RESULT] Task not completed\n")
-	fmt.Fprintf(os.Stderr, "Feedback: %s\n", result.Feedback)
+	fmt.Fprintf(os.Stderr, "Feedback: %s\n", supervisorResult.Feedback)
 	fmt.Fprintf(os.Stderr, "Agent will continue working based on feedback\n")
 	fmt.Fprintf(os.Stderr, "%s\n\n", strings.Repeat("=", 60))
 
-	fmt.Fprintf(logFile, "[%s] Blocking with feedback: %s\n", timestamp, result.Feedback)
-	fmt.Fprintf(logFile, "[%s] Output:\n%s\n", timestamp, string(outputJSON))
-	logFile.Sync()
+	fileLogger.Info("blocking with feedback", logger.StringField("feedback", supervisorResult.Feedback))
 
 	return nil
 }
 
-// getSupervisorPrompt reads the supervisor prompt from ~/.claude/SUPERVISOR.md
-func getSupervisorPrompt() (string, error) {
-	homeDir, err := os.UserHomeDir()
+// getSupervisorPrompt reads the supervisor prompt from the configured path.
+func getSupervisorPrompt(cfg *config.SupervisorConfig) (string, error) {
+	promptPath, err := cfg.GetResolvedPromptPath()
 	if err != nil {
 		return "", err
 	}
-	supervisorPath := filepath.Join(homeDir, ".claude", "SUPERVISOR.md")
 
-	data, err := os.ReadFile(supervisorPath)
+	data, err := os.ReadFile(promptPath)
 	if err != nil {
 		return "", err
 	}
