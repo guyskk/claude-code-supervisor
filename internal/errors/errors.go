@@ -44,10 +44,10 @@ func (t ErrorType) String() string {
 // Predefined error codes.
 const (
 	// Config errors
-	CCCConfigInvalid      = "CCC_CONFIG_INVALID"
-	CCCConfigNotFound      = "CCC_CONFIG_NOT_FOUND"
-	CCCConfigReadFailed    = "CCC_CONFIG_READ_FAILED"
-	CCCConfigParseFailed   = "CCC_CONFIG_PARSE_FAILED"
+	CCCConfigInvalid     = "CCC_CONFIG_INVALID"
+	CCCConfigNotFound    = "CCC_CONFIG_NOT_FOUND"
+	CCCConfigReadFailed  = "CCC_CONFIG_READ_FAILED"
+	CCCConfigParseFailed = "CCC_CONFIG_PARSE_FAILED"
 
 	// Provider errors
 	CCCProviderNotFound = "CCC_PROVIDER_NOT_FOUND"
@@ -59,9 +59,9 @@ const (
 	CCCCLaudeExitAbnormally = "CCC_CLAUDE_EXIT_ABNORMALLY"
 
 	// Supervisor errors
-	CCCSupervisorTimeout      = "CCC_SUPERVISOR_TIMEOUT"
+	CCCSupervisorTimeout       = "CCC_SUPERVISOR_TIMEOUT"
 	CCCSupervisorMaxIterations = "CCC_SUPERVISOR_MAX_ITERATIONS"
-	CCCSupervisorParseFailed  = "CCC_SUPERVISOR_PARSE_FAILED"
+	CCCSupervisorParseFailed   = "CCC_SUPERVISOR_PARSE_FAILED"
 )
 
 // AppError represents an application error with structured information.

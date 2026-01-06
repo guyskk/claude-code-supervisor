@@ -201,9 +201,9 @@ func fieldsToAttrs(fields []Field) []slog.Attr {
 
 // textHandler is a custom handler that formats log entries.
 type textHandler struct {
-	w    io.Writer
-	mu   sync.Mutex
-	opts *slog.HandlerOptions
+	w     io.Writer
+	mu    sync.Mutex
+	opts  *slog.HandlerOptions
 	level Level
 }
 
@@ -411,7 +411,7 @@ func (n *nopLogger) Debug(msg string, fields ...Field) {}
 func (n *nopLogger) Info(msg string, fields ...Field)  {}
 func (n *nopLogger) Warn(msg string, fields ...Field)  {}
 func (n *nopLogger) Error(msg string, fields ...Field) {}
-func (n *nopLogger) With(fields ...Field) Logger      { return n }
+func (n *nopLogger) With(fields ...Field) Logger       { return n }
 func (n *nopLogger) WithError(err error) Logger        { return n }
 
 // Global default logger
