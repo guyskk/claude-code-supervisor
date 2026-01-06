@@ -45,69 +45,52 @@ func RunSupervisorHook(args []string) error {
 		return nil
 	}
 
-	// Get session ID: first from environment variable, then from stdin
-	sessionID := os.Getenv("CCC_SESSION_ID")
-	var input StopHookInput
-	stopHookActive := false
-
-	if sessionID == "" {
-		// Fallback: read from stdin
-		decoder := json.NewDecoder(os.Stdin)
-		if err := decoder.Decode(&input); err != nil {
-			return fmt.Errorf("failed to parse stdin JSON: %w", err)
-		}
-		sessionID = input.SessionID
-		stopHookActive = input.StopHookActive
+	// Get supervisor ID: from environment variable
+	supervisorID := os.Getenv("CCC_SUPERVISOR_ID")
+	if supervisorID == "" {
+		return fmt.Errorf("CCC_SUPERVISOR_ID is required from env var")
 	}
 
-	if sessionID == "" {
-		return fmt.Errorf("session_id is required (from CCC_SESSION_ID env var or stdin)")
-	}
-
+	// Session-specific log file: supervisor-{id}.log
 	stateDir, err := supervisor.GetStateDir()
 	if err != nil {
 		return fmt.Errorf("failed to get state directory: %w", err)
 	}
-
 	// Ensure state directory exists
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
-
-	// Session-specific log file: supervisor-{session-id}.log
-	sessionLogFile := filepath.Join(stateDir, fmt.Sprintf("supervisor-%s.log", sessionID))
-	logFile, err := os.OpenFile(sessionLogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logFilePath := filepath.Join(stateDir, fmt.Sprintf("supervisor-%s.log", supervisorID))
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to open session log file: %w", err)
+		return fmt.Errorf("failed to open supervisor log file: %w", err)
 	}
 	defer logFile.Close()
-
 	timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
 	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("=", 70))
-	fmt.Fprintf(logFile, "[SUPERVISOR HOOK] Starting\n")
+	fmt.Fprintf(logFile, "[SUPERVISOR HOOK] Starting %s\n", supervisorID)
+	logFile.Sync()
+
+	var input StopHookInput
+	decoder := json.NewDecoder(os.Stdin)
+	if err := decoder.Decode(&input); err != nil {
+		return fmt.Errorf("failed to parse stdin JSON: %w", err)
+	}
+	sessionID := input.SessionID
+	stopHookActive := input.StopHookActive
+	if sessionID == "" {
+		return fmt.Errorf("session_id is required from stdin")
+	}
 	fmt.Fprintf(logFile, "%s\n", strings.Repeat("=", 70))
 	fmt.Fprintf(logFile, "[%s] Session ID: %s\n", timestamp, sessionID)
 	fmt.Fprintf(logFile, "[%s] Stop Hook Active: %v\n", timestamp, stopHookActive)
 	fmt.Fprintf(logFile, "[%s] Args: %v\n", timestamp, args)
-
-	// Log input as formatted JSON
-	inputJSON, _ := json.MarshalIndent(struct {
-		SessionID      string `json:"session_id"`
-		StopHookActive bool   `json:"stop_hook_active"`
-	}{
-		SessionID:      sessionID,
-		StopHookActive: stopHookActive,
-	}, "", "  ")
-	fmt.Fprintf(logFile, "[%s] Input:\n%s\n\n", timestamp, string(inputJSON))
 	logFile.Sync()
 
-	// Output to stderr (visible in verbose mode with Ctrl+O)
-	fmt.Fprintf(os.Stderr, "\n%s\n", strings.Repeat("=", 60))
-	fmt.Fprintf(os.Stderr, "[SUPERVISOR HOOK] Starting\n")
-	fmt.Fprintf(os.Stderr, "%s\n", strings.Repeat("=", 60))
-	fmt.Fprintf(os.Stderr, "Session ID: %s\n", sessionID)
-	fmt.Fprintf(os.Stderr, "Stop Hook Active: %v\n", stopHookActive)
-	fmt.Fprintf(os.Stderr, "Log file: %s\n", sessionLogFile)
+	// Log input as formatted JSON
+	inputJSON, _ := json.MarshalIndent(input, "", "  ")
+	fmt.Fprintf(logFile, "[%s] Input:\n%s\n\n", timestamp, string(inputJSON))
+	logFile.Sync()
 
 	// Check iteration count limit
 	shouldContinue, count, err := supervisor.ShouldContinue(sessionID, supervisor.DefaultMaxIterations)
@@ -155,6 +138,7 @@ func RunSupervisorHook(args []string) error {
 	// Note: NOT using --system-prompt - supervisor prompt is part of user prompt
 	args2 := []string{
 		"claude",
+		"-p",
 		"--fork-session", // Create child session instead of --print
 		"--resume", sessionID,
 		"--verbose", // Required for stream-json output format
@@ -162,16 +146,17 @@ func RunSupervisorHook(args []string) error {
 		"--json-schema", supervisorJSONSchema,
 		supervisorPrompt, // User prompt as positional argument
 	}
+	args2Str := strings.Join(args2[:len(args2)-1], " ")
 
 	// Log the command being executed
 	fmt.Fprintf(os.Stderr, "\n[SUPERVISOR] Reviewing work...\n")
-	fmt.Fprintf(os.Stderr, "See log file for details: %s\n\n", sessionLogFile)
+	fmt.Fprintf(os.Stderr, "See log file for details: %s\n\n", logFilePath)
 
 	timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
 	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("-", 70))
 	fmt.Fprintf(logFile, "[SUPERVISOR] Executing review\n")
 	fmt.Fprintf(logFile, "%s\n", strings.Repeat("-", 70))
-	fmt.Fprintf(logFile, "[%s] Command: claude --fork-session --resume %s\n", timestamp, sessionID)
+	fmt.Fprintf(logFile, "[%s] Command: %s\n", timestamp, args2Str)
 	fmt.Fprintf(logFile, "[%s] Args: %d\n", timestamp, len(args2))
 	logFile.Sync()
 
@@ -234,6 +219,10 @@ func RunSupervisorHook(args []string) error {
 			// Extract structured output from result message
 			if msg.Type == "result" && msg.StructuredOutput != nil {
 				result = msg.StructuredOutput
+				err := cmd.Process.Kill()
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error cancelling command: %v\n", err)
+				}
 			}
 		}
 	}
@@ -375,8 +364,10 @@ func getDefaultSupervisorPrompt() string {
 
 ## 输出格式
 
+调用StructuredOutput工具提供JSON结果:
 {"completed": boolean, "feedback": "string"}
 
-仔细回顾用户需求和方案规划，充分阅读所有的改动以及相关文档/代码等，严格检查评估当前任务的情况。
+请仔细回顾用户需求和方案规划，充分阅读所有的改动以及相关文档/代码等，严格检查评估当前任务的情况。
+调用StructuredOutput工具成功提交反馈后立即停止，不需要再做任何其他工作。
 `
 }
