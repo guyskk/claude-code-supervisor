@@ -28,6 +28,11 @@ func GetDir() string {
 	return GetDirFunc()
 }
 
+// SupervisorConfig represents the supervisor configuration.
+type SupervisorConfig struct {
+	MaxIterations int `json:"max_iterations,omitempty"` // Maximum iterations before allowing stop (default: 20)
+}
+
 // Config represents the ccc.json configuration structure.
 // Settings and Providers use dynamic maps to handle arbitrary Claude settings fields.
 type Config struct {
@@ -35,6 +40,7 @@ type Config struct {
 	ClaudeArgs      []string                          `json:"claude_args,omitempty"`
 	CurrentProvider string                            `json:"current_provider"`
 	Providers       map[string]map[string]interface{} `json:"providers"`
+	Supervisor      *SupervisorConfig                 `json:"supervisor,omitempty"`
 }
 
 // GetConfigPath returns the path to ccc.json.
