@@ -2,21 +2,24 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
-	"github.com/guyskk/ccc/internal/claude_agent_sdk"
 	"github.com/guyskk/ccc/internal/config"
 	"github.com/guyskk/ccc/internal/logger"
 	"github.com/guyskk/ccc/internal/supervisor"
+	"github.com/schlunsen/claude-agent-sdk-go"
+	"github.com/schlunsen/claude-agent-sdk-go/types"
 )
 
 const (
-	// supervisorJSONSchema is the JSON schema for structured output from Supervisor.
-	supervisorJSONSchema = `{"type":"object","properties":{"completed":{"type":"boolean"},"feedback":{"type":"string"}},"required":["completed","feedback"]}`
+	// supervisorTimeout is the timeout for supervisor review
+	supervisorTimeout = 10 * time.Minute
 )
 
 // StopHookInput represents the input from Stop hook.
@@ -30,6 +33,12 @@ type StopHookInput struct {
 type HookOutput struct {
 	Decision string `json:"decision,omitempty"` // "block" or omitted (allows stop)
 	Reason   string `json:"reason,omitempty"`
+}
+
+// SupervisorResult represents the structured output from Supervisor.
+type SupervisorResult struct {
+	Completed bool   `json:"completed"`
+	Feedback  string `json:"feedback"`
 }
 
 // RunSupervisorHook executes the supervisor-hook subcommand.
@@ -52,18 +61,8 @@ func RunSupervisorHook(args []string) error {
 		return fmt.Errorf("failed to load supervisor config: %w", err)
 	}
 
-	// Create logger
+	// Use fixed log level (info)
 	logLevel := logger.LevelInfo
-	switch supervisorCfg.LogLevel {
-	case "debug":
-		logLevel = logger.LevelDebug
-	case "info":
-		logLevel = logger.LevelInfo
-	case "warn":
-		logLevel = logger.LevelWarn
-	case "error":
-		logLevel = logger.LevelError
-	}
 
 	// Get supervisor ID: from environment variable
 	supervisorID := os.Getenv("CCC_SUPERVISOR_ID")
@@ -138,25 +137,12 @@ func RunSupervisorHook(args []string) error {
 		fmt.Fprintf(os.Stderr, "Iteration count: %d/%d\n", newCount, maxIterations)
 	}
 
-	// Get supervisor prompt
-	supervisorPrompt, err := getSupervisorPrompt(supervisorCfg)
-	if err != nil {
-		fileLogger.Warn("failed to read supervisor prompt", logger.StringField("error", err.Error()))
-		supervisorPrompt = getDefaultSupervisorPrompt()
-	}
+	// Get default supervisor prompt (hardcoded)
+	supervisorPrompt := getDefaultSupervisorPrompt()
 
 	fileLogger.Debug("supervisor prompt loaded",
 		logger.IntField("prompt_length", len(supervisorPrompt)),
 	)
-
-	// Create claude agent
-	agent, err := claude_agent_sdk.NewAgent(&claude_agent_sdk.Config{
-		Timeout: supervisorCfg.Timeout(),
-		Logger:  fileLogger,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create claude agent: %w", err)
-	}
 
 	// Inform user
 	fmt.Fprintf(os.Stderr, "\n[SUPERVISOR] Reviewing work...\n")
@@ -164,71 +150,42 @@ func RunSupervisorHook(args []string) error {
 
 	fileLogger.Info("starting supervisor review")
 
-	// Run supervisor via claude agent
-	opts := claude_agent_sdk.RunOptions{
-		SessionID:    sessionID,
-		ForkSession:  true,
-		Prompt:       supervisorPrompt,
-		OutputFormat: "stream-json",
-		JSONSchema:   supervisorJSONSchema,
-		Env:          []string{"CCC_SUPERVISOR_HOOK=1"},
-	}
-
-	result, err := agent.Run(nil, opts)
+	// Run supervisor using Claude Agent SDK
+	result, err := runSupervisorWithSDK(context.Background(), sessionID, supervisorPrompt, supervisorCfg.Timeout(), fileLogger)
 	if err != nil {
-		fileLogger.Error("claude agent run failed", logger.StringField("error", err.Error()))
-		return fmt.Errorf("claude agent run failed: %w", err)
+		fileLogger.Error("supervisor SDK failed", logger.StringField("error", err.Error()))
+		return fmt.Errorf("supervisor SDK failed: %w", err)
 	}
 
-	fileLogger.Info("supervisor review completed",
-		logger.StringField("duration", result.Duration.String()),
-		logger.IntField("success", func() int {
-			if result.Success {
-				return 1
-			} else {
-				return 0
-			}
-		}()),
-	)
-
-	// Extract structured output
-	var supervisorResult *claude_agent_sdk.SupervisorResult
-	if result.StructuredOutput != nil {
-		supervisorResult, err = claude_agent_sdk.ParseSupervisorResult(result.StructuredOutput)
-		if err != nil {
-			fileLogger.Warn("failed to parse supervisor result",
-				logger.StringField("error", err.Error()),
-			)
-		}
-	}
+	fileLogger.Info("supervisor review completed")
 
 	// Process result
 	fmt.Fprintf(os.Stderr, "\n%s\n", strings.Repeat("=", 60))
 
-	if supervisorResult == nil {
+	if result == nil {
 		fileLogger.Warn("no supervisor result found, allowing stop")
 		fmt.Fprintf(os.Stderr, "[RESULT] No supervisor result found, allowing stop\n")
 		return nil
 	}
 
 	// Log the result
-	resultJSON, _ := json.MarshalIndent(supervisorResult, "", "  ")
+	resultJSON, _ := json.MarshalIndent(result, "", "  ")
 	fileLogger.Info("supervisor result", logger.StringField("result", string(resultJSON)))
 
-	if supervisorResult.Completed {
+	if result.Completed {
 		fileLogger.Info("task completed, allowing stop")
 		fmt.Fprintf(os.Stderr, "[RESULT] Task completed, allowing stop\n")
 		return nil
 	}
 
 	// Task not completed, block with feedback
-	if supervisorResult.Feedback == "" {
-		supervisorResult.Feedback = "Please continue completing the task"
+	if result.Feedback == "" {
+		result.Feedback = "Please continue completing the task"
 	}
 
 	output := HookOutput{
 		Decision: "block",
-		Reason:   supervisorResult.Feedback,
+		Reason:   result.Feedback,
 	}
 	outputJSON, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
@@ -237,33 +194,146 @@ func RunSupervisorHook(args []string) error {
 	fmt.Println(string(outputJSON))
 
 	fmt.Fprintf(os.Stderr, "[RESULT] Task not completed\n")
-	fmt.Fprintf(os.Stderr, "Feedback: %s\n", supervisorResult.Feedback)
+	fmt.Fprintf(os.Stderr, "Feedback: %s\n", result.Feedback)
 	fmt.Fprintf(os.Stderr, "Agent will continue working based on feedback\n")
 	fmt.Fprintf(os.Stderr, "%s\n\n", strings.Repeat("=", 60))
 
-	fileLogger.Info("blocking with feedback", logger.StringField("feedback", supervisorResult.Feedback))
+	fileLogger.Info("blocking with feedback", logger.StringField("feedback", result.Feedback))
 
 	return nil
 }
 
-// getSupervisorPrompt reads the supervisor prompt from the configured path.
-func getSupervisorPrompt(cfg *config.SupervisorConfig) (string, error) {
-	promptPath, err := cfg.GetResolvedPromptPath()
-	if err != nil {
-		return "", err
+// runSupervisorWithSDK runs the supervisor using the Claude Agent SDK.
+func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout time.Duration, log logger.Logger) (*SupervisorResult, error) {
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Build options for SDK
+	opts := types.NewClaudeAgentOptions().
+		WithForkSession(true).                              // Fork the current session
+		WithResume(sessionID).                              // Resume from specific session
+		WithSystemPromptString(prompt).                     // Set supervisor prompt
+		WithPermissionMode(types.PermissionModeAcceptEdits) // Accept edits automatically
+
+	// Set environment variable to avoid infinite loop
+	opts.Env = map[string]string{
+		"CCC_SUPERVISOR_HOOK": "1",
 	}
 
-	data, err := os.ReadFile(promptPath)
+	log.Debug("creating Claude SDK client")
+
+	// Use Query for one-shot interaction
+	messages, err := claude.Query(ctx, "", opts)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("failed to create SDK query: %w", err)
 	}
 
-	return string(data), nil
+	// Process messages
+	log.Debug("receiving messages from SDK")
+
+	var fullResponse strings.Builder
+	for msg := range messages {
+		switch m := msg.(type) {
+		case *types.AssistantMessage:
+			// Extract text from content blocks
+			for _, block := range m.Content {
+				if textBlock, ok := block.(*types.TextBlock); ok {
+					fullResponse.WriteString(textBlock.Text)
+					log.Debug("received text block",
+						logger.IntField("length", len(textBlock.Text)),
+					)
+				}
+			}
+		case *types.ResultMessage:
+			log.Debug("received result message",
+				logger.StringField("cost", fmt.Sprintf("%.4f", float64Value(m.TotalCostUSD))),
+			)
+		case *types.SystemMessage:
+			log.Debug("received system message",
+				logger.StringField("subtype", m.Subtype),
+			)
+		}
+	}
+
+	// Parse JSON response from the text
+	responseText := fullResponse.String()
+	log.Debug("parsing supervisor response",
+		logger.IntField("response_length", len(responseText)),
+	)
+
+	result, err := parseSupervisorResult(responseText)
+	if err != nil {
+		log.Warn("failed to parse supervisor result as JSON",
+			logger.StringField("error", err.Error()),
+		)
+		log.Debug("raw response", logger.StringField("response", responseText))
+		return nil, fmt.Errorf("failed to parse supervisor result: %w", err)
+	}
+
+	return result, nil
+}
+
+// parseSupervisorResult parses the supervisor result from the response text.
+// It looks for a JSON object with "completed" and "feedback" fields.
+func parseSupervisorResult(responseText string) (*SupervisorResult, error) {
+	// Try to find JSON in the response
+	// Look for content between ```json and ``` markers
+	jsonStart := strings.Index(responseText, "```json")
+	if jsonStart == -1 {
+		jsonStart = strings.Index(responseText, "```")
+	}
+	if jsonStart == -1 {
+		// No code block markers, try to find the first { and last }
+		jsonStart = strings.Index(responseText, "{")
+		jsonEnd := strings.LastIndex(responseText, "}")
+		if jsonStart == -1 || jsonEnd == -1 {
+			return nil, fmt.Errorf("no JSON found in response")
+		}
+		jsonText := responseText[jsonStart : jsonEnd+1]
+		return parseResultJSON(jsonText)
+	}
+
+	// Found code block marker, extract content
+	jsonStart += len("```json")
+	if jsonStart >= len(responseText) {
+		jsonStart = strings.Index(responseText, "```") + 3
+	}
+	// Skip whitespace
+	for jsonStart < len(responseText) && (responseText[jsonStart] == ' ' || responseText[jsonStart] == '\n' || responseText[jsonStart] == '\t') {
+		jsonStart++
+	}
+
+	// Find end marker
+	jsonEnd := strings.Index(responseText[jsonStart:], "```")
+	if jsonEnd == -1 {
+		return nil, fmt.Errorf("no end marker for JSON code block")
+	}
+
+	jsonText := responseText[jsonStart : jsonStart+jsonEnd]
+	return parseResultJSON(jsonText)
+}
+
+// parseResultJSON parses the JSON text into a SupervisorResult.
+func parseResultJSON(jsonText string) (*SupervisorResult, error) {
+	var result SupervisorResult
+	if err := json.Unmarshal([]byte(jsonText), &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+	return &result, nil
+}
+
+// float64Value safely dereferences a float64 pointer.
+func float64Value(p *float64) float64 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 // getDefaultSupervisorPrompt returns the default supervisor prompt.
 func getDefaultSupervisorPrompt() string {
-	return `# 任务：严格审查当前执行的工作并给出反馈意见
+	basePrompt := `# 任务：严格审查当前执行的工作并给出反馈意见
 
 你是一个无比严格的 Supervisor，负责审查当前执行的工作，判断任务是否真正完成，达到了能做到的最好的、最完备状态，没有任何还能做的事情了。
 
@@ -301,10 +371,15 @@ func getDefaultSupervisorPrompt() string {
 
 ## 输出格式
 
-调用StructuredOutput工具提供JSON结果:
-{"completed": boolean, "feedback": "string"}
+请严格按照以下 JSON 格式返回结果（使用代码块包裹）：
 
-请仔细回顾用户需求和方案规划，充分阅读所有的改动以及相关文档/代码等，严格检查评估当前任务的情况。
-调用StructuredOutput工具成功提交反馈后立即停止，不需要再做任何其他工作。
 `
+	jsonBlock := "\n" + "```json" + "\n" + `{
+  "completed": true/false,
+  "feedback": "具体反馈内容"
+}
+` + "``" + "\n"
+	endPrompt := `请仔细回顾用户需求和方案规划，充分阅读所有的改动以及相关文档/代码等，严格检查评估当前任务的情况。
+返回 JSON 结果后立即停止，不需要再做任何其他工作。`
+	return basePrompt + jsonBlock + endPrompt
 }

@@ -19,12 +19,6 @@ func TestDefaultSupervisorConfig(t *testing.T) {
 	if cfg.TimeoutSeconds != 600 {
 		t.Errorf("default TimeoutSeconds = %d, want 600", cfg.TimeoutSeconds)
 	}
-	if cfg.PromptPath != "~/.claude/SUPERVISOR.md" {
-		t.Errorf("default PromptPath = %s, want ~/.claude/SUPERVISOR.md", cfg.PromptPath)
-	}
-	if cfg.LogLevel != "info" {
-		t.Errorf("default LogLevel = %s, want info", cfg.LogLevel)
-	}
 }
 
 func TestSupervisorConfig_Validate(t *testing.T) {
@@ -38,7 +32,6 @@ func TestSupervisorConfig_Validate(t *testing.T) {
 			cfg: &SupervisorConfig{
 				MaxIterations:  20,
 				TimeoutSeconds: 600,
-				LogLevel:       "info",
 			},
 			wantErr: false,
 		},
@@ -47,7 +40,6 @@ func TestSupervisorConfig_Validate(t *testing.T) {
 			cfg: &SupervisorConfig{
 				MaxIterations:  0,
 				TimeoutSeconds: 600,
-				LogLevel:       "info",
 			},
 			wantErr: true,
 		},
@@ -56,7 +48,6 @@ func TestSupervisorConfig_Validate(t *testing.T) {
 			cfg: &SupervisorConfig{
 				MaxIterations:  101,
 				TimeoutSeconds: 600,
-				LogLevel:       "info",
 			},
 			wantErr: true,
 		},
@@ -65,7 +56,6 @@ func TestSupervisorConfig_Validate(t *testing.T) {
 			cfg: &SupervisorConfig{
 				MaxIterations:  20,
 				TimeoutSeconds: 5,
-				LogLevel:       "info",
 			},
 			wantErr: true,
 		},
@@ -74,45 +64,8 @@ func TestSupervisorConfig_Validate(t *testing.T) {
 			cfg: &SupervisorConfig{
 				MaxIterations:  20,
 				TimeoutSeconds: 4000,
-				LogLevel:       "info",
 			},
 			wantErr: true,
-		},
-		{
-			name: "invalid log_level",
-			cfg: &SupervisorConfig{
-				MaxIterations:  20,
-				TimeoutSeconds: 600,
-				LogLevel:       "invalid",
-			},
-			wantErr: true,
-		},
-		{
-			name: "valid debug log_level",
-			cfg: &SupervisorConfig{
-				MaxIterations:  20,
-				TimeoutSeconds: 600,
-				LogLevel:       "debug",
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid warn log_level",
-			cfg: &SupervisorConfig{
-				MaxIterations:  20,
-				TimeoutSeconds: 600,
-				LogLevel:       "warn",
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid error log_level",
-			cfg: &SupervisorConfig{
-				MaxIterations:  20,
-				TimeoutSeconds: 600,
-				LogLevel:       "error",
-			},
-			wantErr: false,
 		},
 	}
 
@@ -134,59 +87,6 @@ func TestSupervisorConfig_Timeout(t *testing.T) {
 	timeout := cfg.Timeout()
 	if timeout != 300000000000 { // 300 seconds in nanoseconds
 		t.Errorf("Timeout() = %v, want 300s", timeout)
-	}
-}
-
-func TestSupervisorConfig_GetResolvedPromptPath(t *testing.T) {
-	tests := []struct {
-		name    string
-		cfg     *SupervisorConfig
-		wantErr bool
-	}{
-		{
-			name: "default path with tilde",
-			cfg: &SupervisorConfig{
-				PromptPath: "~/.claude/SUPERVISOR.md",
-			},
-			wantErr: false,
-		},
-		{
-			name: "absolute path",
-			cfg: &SupervisorConfig{
-				PromptPath: "/tmp/supervisor.md",
-			},
-			wantErr: false,
-		},
-		{
-			name: "empty path uses default",
-			cfg: &SupervisorConfig{
-				PromptPath: "",
-			},
-			wantErr: false,
-		},
-		{
-			name: "just tilde",
-			cfg: &SupervisorConfig{
-				PromptPath: "~",
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			path, err := tt.cfg.GetResolvedPromptPath()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetResolvedPromptPath() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && path == "" {
-				t.Error("GetResolvedPromptPath() returned empty path")
-			}
-			if !tt.wantErr && path == tt.cfg.PromptPath && tt.cfg.PromptPath[0] == '~' {
-				t.Error("GetResolvedPromptPath() did not expand tilde")
-			}
-		})
 	}
 }
 
@@ -228,8 +128,6 @@ func TestSupervisorConfig_MarshalJSON(t *testing.T) {
 		Enabled:        true,
 		MaxIterations:  30,
 		TimeoutSeconds: 900,
-		PromptPath:     "~/.claude/SUPERVISOR.md",
-		LogLevel:       "debug",
 	}
 
 	data, err := cfg.MarshalJSON()
@@ -250,5 +148,16 @@ func TestSupervisorConfig_MarshalJSON(t *testing.T) {
 	// JSON numbers are float64
 	if result["max_iterations"] != float64(30) {
 		t.Errorf("max_iterations = %v, want 30", result["max_iterations"])
+	}
+	if result["timeout_seconds"] != float64(900) {
+		t.Errorf("timeout_seconds = %v, want 900", result["timeout_seconds"])
+	}
+
+	// Verify prompt_path and log_level are not included
+	if _, exists := result["prompt_path"]; exists {
+		t.Error("prompt_path should not be included in JSON")
+	}
+	if _, exists := result["log_level"]; exists {
+		t.Error("log_level should not be included in JSON")
 	}
 }

@@ -24,14 +24,6 @@ type SupervisorConfig struct {
 	// Can be overridden by CCC_SUPERVISOR_TIMEOUT environment variable.
 	// Default is 600 (10 minutes).
 	TimeoutSeconds int
-
-	// PromptPath is the path to the supervisor prompt file.
-	// Default is ~/.claude/SUPERVISOR.md.
-	PromptPath string
-
-	// LogLevel is the logging level (debug, info, warn, error).
-	// Default is "info".
-	LogLevel string
 }
 
 // DefaultSupervisorConfig returns the default supervisor configuration.
@@ -40,8 +32,6 @@ func DefaultSupervisorConfig() *SupervisorConfig {
 		Enabled:        false,
 		MaxIterations:  20,
 		TimeoutSeconds: 600,
-		PromptPath:     "~/.claude/SUPERVISOR.md",
-		LogLevel:       "info",
 	}
 }
 
@@ -94,20 +84,7 @@ func LoadSupervisorConfig() (*SupervisorConfig, error) {
 					}
 				}
 			}
-
-			// Parse prompt_path
-			if promptPathVal, exists := supervisorSection["prompt_path"]; exists {
-				if promptPath, ok := promptPathVal.(string); ok {
-					supervisorCfg.PromptPath = promptPath
-				}
-			}
-
-			// Parse log_level
-			if logLevelVal, exists := supervisorSection["log_level"]; exists {
-				if logLevel, ok := logLevelVal.(string); ok {
-					supervisorCfg.LogLevel = logLevel
-				}
-			}
+			// Note: prompt_path and log_level are now ignored for simplicity
 		}
 	}
 
@@ -150,10 +127,6 @@ func (c *SupervisorConfig) Validate() error {
 	if c.TimeoutSeconds > 3600 {
 		return fmt.Errorf("timeout_seconds must be at most 3600 (1 hour), got %d", c.TimeoutSeconds)
 	}
-	validLogLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
-	if !validLogLevels[c.LogLevel] {
-		return fmt.Errorf("log_level must be one of: debug, info, warn, error, got %s", c.LogLevel)
-	}
 	return nil
 }
 
@@ -163,29 +136,5 @@ func (c *SupervisorConfig) MarshalJSON() ([]byte, error) {
 		"enabled":         c.Enabled,
 		"max_iterations":  c.MaxIterations,
 		"timeout_seconds": c.TimeoutSeconds,
-		"prompt_path":     c.PromptPath,
-		"log_level":       c.LogLevel,
 	})
-}
-
-// GetResolvedPromptPath returns the expanded path to the supervisor prompt file.
-// It expands the ~ to the user's home directory.
-func (c *SupervisorConfig) GetResolvedPromptPath() (string, error) {
-	if c.PromptPath == "" {
-		c.PromptPath = "~/.claude/SUPERVISOR.md"
-	}
-
-	// Expand ~ to home directory
-	if c.PromptPath[0] == '~' {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		if len(c.PromptPath) > 1 && c.PromptPath[1] == '/' {
-			return homeDir + c.PromptPath[1:], nil
-		}
-		return homeDir, nil
-	}
-
-	return c.PromptPath, nil
 }

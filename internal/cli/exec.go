@@ -21,9 +21,9 @@ func executeProcess(path string, args []string, env []string) error {
 // runClaude executes the claude command for the given provider.
 // If supervisorMode is true, it generates settings with Stop hook configuration.
 // This replaces the current process with claude using syscall.Exec.
+// Provider env variables are passed to the claude subprocess.
 func runClaude(cfg *config.Config, providerName string, claudeArgs []string, supervisorMode bool) error {
-	var mergedSettings map[string]interface{}
-	var err error
+	var switchResult *provider.SwitchResult
 	var supervisorID string
 
 	// Generate settings based on mode
@@ -35,9 +35,11 @@ func runClaude(cfg *config.Config, providerName string, claudeArgs []string, sup
 		os.Setenv("CCC_SUPERVISOR_ID", supervisorID)
 
 		// Supervisor mode: generate settings with Stop hook
-		if err := provider.SwitchWithHook(cfg, providerName); err != nil {
+		result, err := provider.SwitchWithHook(cfg, providerName)
+		if err != nil {
 			return fmt.Errorf("error generating settings with hook: %w", err)
 		}
+		switchResult = result
 		fmt.Printf("Launching with provider: %s\n", providerName)
 
 		// Show log file path with actual supervisor ID
@@ -56,15 +58,13 @@ func runClaude(cfg *config.Config, providerName string, claudeArgs []string, sup
 				}
 			}
 		}
-
-		// Get merged settings for auth token
-		mergedSettings = config.DeepMerge(cfg.Settings, cfg.Providers[providerName])
 	} else {
 		// Normal mode: switch provider
-		mergedSettings, err = provider.Switch(cfg, providerName)
+		result, err := provider.Switch(cfg, providerName)
 		if err != nil {
 			return fmt.Errorf("error switching provider: %w", err)
 		}
+		switchResult = result
 		fmt.Printf("Launching with provider: %s\n", providerName)
 	}
 
@@ -82,8 +82,14 @@ func runClaude(cfg *config.Config, providerName string, claudeArgs []string, sup
 	execArgs = append(execArgs, claudeArgs...)
 
 	// Build environment variables
-	authToken := provider.GetAuthToken(mergedSettings)
-	env := append(os.Environ(), fmt.Sprintf("ANTHROPIC_AUTH_TOKEN=%s", authToken))
+	// Start with current process environment
+	env := os.Environ()
+
+	// Add merged provider env variables
+	if switchResult.EnvVars != nil {
+		envPairs := provider.EnvPairsToStrings(switchResult.EnvVars)
+		env = append(env, envPairs...)
+	}
 
 	// Execute the process (replaces current process, does not return on success)
 	return executeProcess(claudePath, execArgs, env)
