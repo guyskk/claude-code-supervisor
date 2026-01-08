@@ -213,11 +213,13 @@ func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout
 	// Build options for SDK
 	// - ForkSession: Create a fork to review the current session state
 	// - Resume: Load the session context (includes system/user/project prompts from settings)
+	// - SettingSources: Load system prompts from user, project, and local settings
 	// - No SystemPrompt: Let SDK load system prompts from settings automatically
 	// - No PermissionMode: Use system defaults from Claude settings
 	opts := types.NewClaudeAgentOptions().
-		WithForkSession(true). // Fork the current session
-		WithResume(sessionID)  // Resume from specific session
+		WithForkSession(true).                                 // Fork the current session
+		WithResume(sessionID).                                 // Resume from specific session
+		WithSettingSources(types.SettingSourceUser, types.SettingSourceProject, types.SettingSourceLocal) // Load all setting sources
 
 	// Set environment variable to avoid infinite loop
 	opts.Env = map[string]string{
@@ -408,9 +410,14 @@ func getDefaultSupervisorPrompt() string {
 
 ## 输出格式
 
-你必须使用 StructuredOutput 工具提供 JSON 结果。
-调用 StructuredOutput 工具，schema 为：{"completed": boolean, "feedback": string}
+请以 JSON 代码块格式提供结果（使用三个反引号包围 JSON）：
+
+完成的任务：
+` + "```json\n{\n  \"completed\": true,\n  \"feedback\": \"\"\n}\n```" + `
+
+未完成的任务：
+` + "```json\n{\n  \"completed\": false,\n  \"feedback\": \"具体的反馈建议，用于指导继续完成工作\"\n}\n```" + `
 
 请仔细回顾用户需求和方案规划，充分阅读所有的改动以及相关文档/代码等，严格检查评估当前任务的情况。
-调用 StructuredOutput 工具成功提交反馈后立即停止，不需要再做任何其他工作。`
+输出 JSON 结果后立即停止，不需要再做任何其他工作。`
 }
