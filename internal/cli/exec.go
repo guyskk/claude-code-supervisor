@@ -40,9 +40,8 @@ func runClaude(cfg *config.Config, providerName string, claudeArgs []string, sup
 			return fmt.Errorf("error generating settings with hook: %w", err)
 		}
 		switchResult = result
-		fmt.Printf("Launching with provider: %s\n", providerName)
 
-		// Show log file path with actual supervisor ID
+		// Show log file path with actual supervisor ID (BEFORE launching message)
 		stateDir, err := supervisor.GetStateDir()
 		if err == nil {
 			logPath := fmt.Sprintf("%s/supervisor-%s.log", stateDir, supervisorID)
@@ -58,6 +57,8 @@ func runClaude(cfg *config.Config, providerName string, claudeArgs []string, sup
 				}
 			}
 		}
+
+		fmt.Printf("Launching with provider: %s\n", providerName)
 	} else {
 		// Normal mode: switch provider
 		result, err := provider.Switch(cfg, providerName)

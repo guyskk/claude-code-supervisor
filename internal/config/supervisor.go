@@ -16,12 +16,10 @@ type SupervisorConfig struct {
 	Enabled bool
 
 	// MaxIterations is the maximum number of supervisor iterations before allowing stop.
-	// Can be overridden by CCC_SUPERVISOR_MAX_ITERATIONS environment variable.
 	// Default is 20.
 	MaxIterations int
 
 	// TimeoutSeconds is the timeout for each supervisor call in seconds.
-	// Can be overridden by CCC_SUPERVISOR_TIMEOUT environment variable.
 	// Default is 600 (10 minutes).
 	TimeoutSeconds int
 }
@@ -37,7 +35,7 @@ func DefaultSupervisorConfig() *SupervisorConfig {
 
 // LoadSupervisorConfig loads the supervisor configuration from the ccc.json.
 // If the supervisor section doesn't exist, returns defaults.
-// Environment variables override config file values.
+// Environment variable CCC_SUPERVISOR can override the enabled flag.
 func LoadSupervisorConfig() (*SupervisorConfig, error) {
 	cfg, err := Load()
 	if err != nil {
@@ -84,25 +82,12 @@ func LoadSupervisorConfig() (*SupervisorConfig, error) {
 					}
 				}
 			}
-			// Note: prompt_path and log_level are now ignored for simplicity
 		}
 	}
 
-	// Apply environment variable overrides
+	// Apply environment variable override for enabled flag only
 	if enabledEnv := os.Getenv("CCC_SUPERVISOR"); enabledEnv != "" {
 		supervisorCfg.Enabled = enabledEnv == "1" || enabledEnv == "true"
-	}
-
-	if maxIterEnv := os.Getenv("CCC_SUPERVISOR_MAX_ITERATIONS"); maxIterEnv != "" {
-		if i, err := strconv.Atoi(maxIterEnv); err == nil {
-			supervisorCfg.MaxIterations = i
-		}
-	}
-
-	if timeoutEnv := os.Getenv("CCC_SUPERVISOR_TIMEOUT"); timeoutEnv != "" {
-		if i, err := strconv.Atoi(timeoutEnv); err == nil {
-			supervisorCfg.TimeoutSeconds = i
-		}
 	}
 
 	return supervisorCfg, nil

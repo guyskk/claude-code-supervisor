@@ -61,8 +61,8 @@ func RunSupervisorHook(args []string) error {
 		return fmt.Errorf("failed to load supervisor config: %w", err)
 	}
 
-	// Use fixed log level (info)
-	logLevel := logger.LevelInfo
+	// Use fixed log level (debug) - supervisor needs very detailed logging
+	logLevel := logger.LevelDebug
 
 	// Get supervisor ID: from environment variable
 	supervisorID := os.Getenv("CCC_SUPERVISOR_ID")
@@ -204,62 +204,91 @@ func RunSupervisorHook(args []string) error {
 }
 
 // runSupervisorWithSDK runs the supervisor using the Claude Agent SDK.
+// The supervisor prompt is sent as a USER message, allowing SDK to load system prompts from settings.
 func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout time.Duration, log logger.Logger) (*SupervisorResult, error) {
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// Build options for SDK
+	// - ForkSession: Create a fork to review the current session state
+	// - Resume: Load the session context (includes system/user/project prompts from settings)
+	// - No SystemPrompt: Let SDK load system prompts from settings automatically
+	// - No PermissionMode: Use system defaults from Claude settings
 	opts := types.NewClaudeAgentOptions().
-		WithForkSession(true).                              // Fork the current session
-		WithResume(sessionID).                              // Resume from specific session
-		WithSystemPromptString(prompt).                     // Set supervisor prompt
-		WithPermissionMode(types.PermissionModeAcceptEdits) // Accept edits automatically
+		WithForkSession(true). // Fork the current session
+		WithResume(sessionID)  // Resume from specific session
 
 	// Set environment variable to avoid infinite loop
 	opts.Env = map[string]string{
 		"CCC_SUPERVISOR_HOOK": "1",
 	}
 
-	log.Debug("creating Claude SDK client")
+	log.Debug("SDK options", logger.StringField("opts", fmt.Sprintf("%+v", opts)))
 
-	// Use Query for one-shot interaction
-	messages, err := claude.Query(ctx, "", opts)
+	// Send supervisor prompt as USER message
+	// The prompt contains the review instructions, system prompts are loaded from settings
+	log.Debug("sending supervisor review request as user message")
+	messages, err := claude.Query(ctx, prompt, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SDK query: %w", err)
 	}
 
-	// Process messages
+	// Process messages and collect result
 	log.Debug("receiving messages from SDK")
 
 	var fullResponse strings.Builder
+	var resultMessage *types.ResultMessage
+
 	for msg := range messages {
+		// Log raw message JSON for debugging
+		msgJSON, _ := json.Marshal(msg)
+		log.Debug("raw message", logger.StringField("json", string(msgJSON)))
+
 		switch m := msg.(type) {
 		case *types.AssistantMessage:
 			// Extract text from content blocks
 			for _, block := range m.Content {
 				if textBlock, ok := block.(*types.TextBlock); ok {
 					fullResponse.WriteString(textBlock.Text)
-					log.Debug("received text block",
-						logger.IntField("length", len(textBlock.Text)),
+					log.Debug("assistant text block",
+						logger.StringField("text", textBlock.Text),
 					)
 				}
 			}
 		case *types.ResultMessage:
-			log.Debug("received result message",
+			resultMessage = m
+			log.Debug("result message",
+				logger.StringField("subtype", m.Subtype),
+				logger.StringField("result", safeString(m.Result)),
 				logger.StringField("cost", fmt.Sprintf("%.4f", float64Value(m.TotalCostUSD))),
 			)
 		case *types.SystemMessage:
-			log.Debug("received system message",
+			log.Debug("system message",
 				logger.StringField("subtype", m.Subtype),
 			)
+		case *types.UserMessage:
+			log.Debug("user message (echo)")
 		}
 	}
 
-	// Parse JSON response from the text
+	// Try to get structured result from ResultMessage.Result first
+	if resultMessage != nil && resultMessage.Result != nil {
+		log.Debug("attempting to parse ResultMessage.Result field")
+		result, err := parseResultJSON(*resultMessage.Result)
+		if err == nil {
+			log.Info("successfully parsed result from ResultMessage.Result")
+			return result, nil
+		}
+		log.Warn("failed to parse ResultMessage.Result, falling back to text parsing",
+			logger.StringField("error", err.Error()),
+		)
+	}
+
+	// Fallback: parse JSON from AssistantMessage text content
 	responseText := fullResponse.String()
-	log.Debug("parsing supervisor response",
-		logger.IntField("response_length", len(responseText)),
+	log.Debug("parsing supervisor response from text",
+		logger.StringField("response", responseText),
 	)
 
 	result, err := parseSupervisorResult(responseText)
@@ -267,10 +296,10 @@ func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout
 		log.Warn("failed to parse supervisor result as JSON",
 			logger.StringField("error", err.Error()),
 		)
-		log.Debug("raw response", logger.StringField("response", responseText))
 		return nil, fmt.Errorf("failed to parse supervisor result: %w", err)
 	}
 
+	log.Info("successfully parsed supervisor result from text")
 	return result, nil
 }
 
@@ -329,6 +358,14 @@ func float64Value(p *float64) float64 {
 		return 0
 	}
 	return *p
+}
+
+// safeString safely dereferences a string pointer.
+func safeString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // getDefaultSupervisorPrompt returns the default supervisor prompt.
