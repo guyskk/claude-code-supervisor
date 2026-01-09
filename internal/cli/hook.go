@@ -2,20 +2,21 @@
 package cli
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/guyskk/ccc/internal/config"
+	"github.com/guyskk/ccc/internal/logger"
+	"github.com/guyskk/ccc/internal/llmparser"
 	"github.com/guyskk/ccc/internal/supervisor"
+	"github.com/schlunsen/claude-agent-sdk-go"
+	"github.com/schlunsen/claude-agent-sdk-go/types"
 )
-
-// JSONSchema for structured output from Supervisor.
-const supervisorJSONSchema = `{"type":"object","properties":{"completed":{"type":"boolean"},"feedback":{"type":"string"}},"required":["completed","feedback"]}`
 
 // StopHookInput represents the input from Stop hook.
 type StopHookInput struct {
@@ -24,18 +25,42 @@ type StopHookInput struct {
 }
 
 // HookOutput represents the output to stdout.
-// When Decision is nil/empty, the decision field is omitted to allow stop.
+// When Decision is empty, the decision field is omitted from JSON to allow stop.
 type HookOutput struct {
 	Decision string `json:"decision,omitempty"` // "block" or omitted (allows stop)
 	Reason   string `json:"reason,omitempty"`
 }
 
+// SupervisorResult represents the structured output from Supervisor.
+type SupervisorResult struct {
+	Completed bool   `json:"completed"`
+	Feedback  string `json:"feedback"`
+}
+
+// supervisorResultSchema is the JSON schema for supervisor structured output.
+var supervisorResultSchema = map[string]interface{}{
+	"type": "object",
+	"properties": map[string]interface{}{
+		"completed": map[string]interface{}{
+			"type":        "boolean",
+			"description": "Whether the task has been completed to the best possible state with nothing left to do",
+		},
+		"feedback": map[string]interface{}{
+			"type":        "string",
+			"description": "Specific feedback and guidance for continuing work when completed is false",
+		},
+	},
+	"required": []string{"completed", "feedback"},
+}
+
 // RunSupervisorHook executes the supervisor-hook subcommand.
 func RunSupervisorHook(args []string) error {
-	// Check if this is a Supervisor's hook call (to avoid infinite loop)
-	// When CCC_SUPERVISOR_HOOK=1 is set, output empty JSON to allow stop
-	if os.Getenv("CCC_SUPERVISOR_HOOK") == "1" {
-		// Output empty object to allow stop (no decision field = allow stop)
+	// Check if this is a Supervisor's hook call (to avoid infinite loop):
+	// - When NOT in supervisor mode (!CCC_SUPERVISOR=1), output empty JSON to allow stop
+	// - When CCC_SUPERVISOR_HOOK=1 (called from supervisor itself), output empty JSON to allow stop
+	isSupervisorMode := os.Getenv("CCC_SUPERVISOR") == "1"
+	isSupervisorHook := os.Getenv("CCC_SUPERVISOR_HOOK") == "1"
+	if !isSupervisorMode || isSupervisorHook {
 		output := HookOutput{}
 		outputJSON, err := json.Marshal(output)
 		if err != nil {
@@ -45,283 +70,325 @@ func RunSupervisorHook(args []string) error {
 		return nil
 	}
 
-	// Get supervisor ID: from environment variable
+	// Load supervisor configuration
+	supervisorCfg, err := config.LoadSupervisorConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load supervisor config: %w", err)
+	}
+
+	// Get supervisor ID from environment variable
 	supervisorID := os.Getenv("CCC_SUPERVISOR_ID")
 	if supervisorID == "" {
 		return fmt.Errorf("CCC_SUPERVISOR_ID is required from env var")
 	}
 
-	// Session-specific log file: supervisor-{id}.log
+	// Setup session-specific log file
 	stateDir, err := supervisor.GetStateDir()
 	if err != nil {
 		return fmt.Errorf("failed to get state directory: %w", err)
 	}
-	// Ensure state directory exists
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
 	logFilePath := filepath.Join(stateDir, fmt.Sprintf("supervisor-%s.log", supervisorID))
+
+	// Create file logger with debug level (supervisor needs detailed logging)
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open supervisor log file: %w", err)
 	}
 	defer logFile.Close()
-	timestamp := time.Now().Format("2006-01-02T15:04:05.000Z")
-	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("=", 70))
-	fmt.Fprintf(logFile, "[SUPERVISOR HOOK] Starting %s\n", supervisorID)
-	logFile.Sync()
 
+	fileLogger := logger.NewLogger(logFile, logger.LevelDebug).With(
+		logger.StringField("supervisor_id", supervisorID),
+	)
+
+	fileLogger.Info("supervisor hook started",
+		logger.StringField("args", strings.Join(args, " ")),
+	)
+
+	// Parse stdin input
 	var input StopHookInput
 	decoder := json.NewDecoder(os.Stdin)
 	if err := decoder.Decode(&input); err != nil {
 		return fmt.Errorf("failed to parse stdin JSON: %w", err)
 	}
 	sessionID := input.SessionID
-	stopHookActive := input.StopHookActive
 	if sessionID == "" {
 		return fmt.Errorf("session_id is required from stdin")
 	}
-	fmt.Fprintf(logFile, "%s\n", strings.Repeat("=", 70))
-	fmt.Fprintf(logFile, "[%s] Session ID: %s\n", timestamp, sessionID)
-	fmt.Fprintf(logFile, "[%s] Stop Hook Active: %v\n", timestamp, stopHookActive)
-	fmt.Fprintf(logFile, "[%s] Args: %v\n", timestamp, args)
-	logFile.Sync()
 
-	// Log input as formatted JSON
-	inputJSON, _ := json.MarshalIndent(input, "", "  ")
-	fmt.Fprintf(logFile, "[%s] Input:\n%s\n\n", timestamp, string(inputJSON))
-	logFile.Sync()
-
-	// Check iteration count limit
-	shouldContinue, count, err := supervisor.ShouldContinue(sessionID, supervisor.DefaultMaxIterations)
+	// Log input
+	inputJSON, err := json.MarshalIndent(input, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error checking state: %v\n", err)
-		// Continue anyway
+		fileLogger.Warn("failed to marshal hook input for logging", logger.StringField("error", err.Error()))
+	} else {
+		fileLogger.Debug("hook input", logger.StringField("input", string(inputJSON)))
+	}
+
+	// Check iteration count limit using configured max_iterations
+	maxIterations := supervisorCfg.MaxIterations
+	shouldContinue, count, err := supervisor.ShouldContinue(sessionID, maxIterations)
+	if err != nil {
+		fileLogger.Warn("failed to check state", logger.StringField("error", err.Error()))
 	}
 	if !shouldContinue {
-		// Max iterations reached, allow stop
+		fileLogger.Warn("max iterations reached",
+			logger.IntField("count", count),
+			logger.IntField("max", maxIterations),
+		)
 		fmt.Fprintf(os.Stderr, "\n[STOP] Max iterations (%d) reached, allowing stop\n", count)
-		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] Max iterations (%d) reached, allowing stop\n", timestamp, count)
-		logFile.Sync()
 		return nil
 	}
 
 	// Increment count
 	newCount, err := supervisor.IncrementCount(sessionID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to increment count: %v\n", err)
+		fileLogger.Warn("failed to increment count", logger.StringField("error", err.Error()))
 	} else {
-		fmt.Fprintf(os.Stderr, "Iteration count: %d/%d\n", newCount, supervisor.DefaultMaxIterations)
-		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] Iteration count: %d/%d\n", timestamp, newCount, supervisor.DefaultMaxIterations)
-		logFile.Sync()
+		fileLogger.Info("iteration count",
+			logger.IntField("count", newCount),
+			logger.IntField("max", maxIterations),
+		)
+		fmt.Fprintf(os.Stderr, "Iteration count: %d/%d\n", newCount, maxIterations)
 	}
 
-	// Get supervisor prompt
-	supervisorPrompt, err := getSupervisorPrompt()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to read supervisor prompt: %v\n", err)
-		supervisorPrompt = getDefaultSupervisorPrompt()
-	}
+	// Get default supervisor prompt (hardcoded)
+	supervisorPrompt := getDefaultSupervisorPrompt()
 
-	// Log the supervisor prompt
-	timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("-", 70))
-	fmt.Fprintf(logFile, "[SUPERVISOR PROMPT]\n")
-	fmt.Fprintf(logFile, "%s\n", strings.Repeat("-", 70))
-	fmt.Fprintf(logFile, "%s\n", supervisorPrompt)
-	fmt.Fprintf(logFile, "%s\n", strings.Repeat("-", 70))
-	logFile.Sync()
+	fileLogger.Debug("supervisor prompt loaded",
+		logger.IntField("prompt_length", len(supervisorPrompt)),
+	)
 
-	// Build claude command using --fork-session (not --print)
-	// Note: NOT using --system-prompt - supervisor prompt is part of user prompt
-	args2 := []string{
-		"claude",
-		"-p",
-		"--fork-session", // Create child session instead of --print
-		"--resume", sessionID,
-		"--verbose", // Required for stream-json output format
-		"--output-format", "stream-json",
-		"--json-schema", supervisorJSONSchema,
-		supervisorPrompt, // User prompt as positional argument
-	}
-	args2Str := strings.Join(args2[:len(args2)-1], " ")
-
-	// Log the command being executed
+	// Inform user
 	fmt.Fprintf(os.Stderr, "\n[SUPERVISOR] Reviewing work...\n")
 	fmt.Fprintf(os.Stderr, "See log file for details: %s\n\n", logFilePath)
 
-	timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("-", 70))
-	fmt.Fprintf(logFile, "[SUPERVISOR] Executing review\n")
-	fmt.Fprintf(logFile, "%s\n", strings.Repeat("-", 70))
-	fmt.Fprintf(logFile, "[%s] Command: %s\n", timestamp, args2Str)
-	fmt.Fprintf(logFile, "[%s] Args: %d\n", timestamp, len(args2))
-	logFile.Sync()
+	fileLogger.Info("starting supervisor review")
 
-	// Execute command with CCC_SUPERVISOR_HOOK=1 to prevent infinite loop
-	cmd := exec.Command(args2[0], args2[1:]...)
-	cmd.Env = append(os.Environ(), "CCC_SUPERVISOR_HOOK=1")
-
-	// Capture stdout for parsing
-	stdout, err := cmd.StdoutPipe()
+	// Run supervisor using Claude Agent SDK
+	result, err := runSupervisorWithSDK(context.Background(), sessionID, supervisorPrompt, supervisorCfg.Timeout(), fileLogger)
 	if err != nil {
-		return fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stderr pipe: %w", err)
+		fileLogger.Error("supervisor SDK failed", logger.StringField("error", err.Error()))
+		return fmt.Errorf("supervisor SDK failed: %w", err)
 	}
 
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start claude command: %w", err)
-	}
-
-	// Read stdout and stderr concurrently
-	var result *supervisor.SupervisorResult
-	var stderrContent strings.Builder
-
-	// Start goroutine to read stderr
-	stderrDone := make(chan struct{})
-	go func() {
-		defer close(stderrDone)
-		stderrBuf := make([]byte, 4096)
-		for {
-			n, err := stderrPipe.Read(stderrBuf)
-			if n > 0 {
-				content := string(stderrBuf[:n])
-				stderrContent.WriteString(content)
-				fmt.Fprintf(os.Stderr, "%s", content)
-			}
-			if err != nil {
-				// Break on error (including EOF)
-				break
-			}
-		}
-	}()
-
-	// Read stdout line by line using bufio.Scanner for proper line handling
-	stdoutScanner := bufio.NewScanner(stdout)
-	for stdoutScanner.Scan() {
-		line := stdoutScanner.Text()
-
-		// Write raw line to session log file
-		fmt.Fprintf(logFile, "[%s] > %s\n", time.Now().Format("2006-01-02T15:04:05.000Z"), line)
-
-		// Try to parse the line as JSON
-		msg, parseErr := supervisor.ParseStreamJSONLine(line)
-		if parseErr == nil && msg != nil {
-			// Output text content to stderr
-			if msg.Type == "text" && msg.Content != "" {
-				fmt.Fprintf(os.Stderr, "%s\n", msg.Content)
-			}
-			// Extract structured output from result message
-			if msg.Type == "result" && msg.StructuredOutput != nil {
-				result = msg.StructuredOutput
-				err := cmd.Process.Kill()
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error cancelling command: %v\n", err)
-				}
-			}
-		}
-	}
-
-	if scanErr := stdoutScanner.Err(); scanErr != nil {
-		fmt.Fprintf(os.Stderr, "Error reading stdout: %v\n", scanErr)
-		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] Error reading stdout: %v\n", timestamp, scanErr)
-		logFile.Sync()
-	}
-
-	// Wait for stderr goroutine to finish
-	<-stderrDone
-
-	// Wait for command to finish
-	cmdErr := cmd.Wait()
-	if cmdErr != nil {
-		fmt.Fprintf(os.Stderr, "Claude command finished with error: %v\n", cmdErr)
-		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] Claude command finished with error: %v\n", timestamp, cmdErr)
-		if stderrContent.Len() > 0 {
-			fmt.Fprintf(logFile, "[%s] Stderr: %s\n", timestamp, stderrContent.String())
-		}
-		logFile.Sync()
-	} else {
-		timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-		fmt.Fprintf(logFile, "[%s] Claude command completed successfully\n", timestamp)
-		logFile.Sync()
-	}
+	fileLogger.Info("supervisor review completed")
 
 	// Process result
 	fmt.Fprintf(os.Stderr, "\n%s\n", strings.Repeat("=", 60))
-	timestamp = time.Now().Format("2006-01-02T15:04:05.000Z")
-	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("=", 70))
-	fmt.Fprintf(logFile, "[RESULT] Review result\n")
-	fmt.Fprintf(logFile, "%s\n", strings.Repeat("=", 70))
 
 	if result == nil {
-		// No result found, allow stop
+		fileLogger.Warn("no supervisor result found, allowing stop")
 		fmt.Fprintf(os.Stderr, "[RESULT] No supervisor result found, allowing stop\n")
-		fmt.Fprintf(logFile, "[%s] No result found, allowing stop\n", timestamp)
-		logFile.Sync()
 		return nil
 	}
 
-	// Log the result as formatted JSON
-	resultJSON, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Fprintf(logFile, "[%s] Result:\n%s\n\n", timestamp, string(resultJSON))
-	logFile.Sync()
+	// Log the result
+	resultJSON, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		fileLogger.Warn("failed to marshal result for logging", logger.StringField("error", err.Error()))
+	} else {
+		fileLogger.Info("supervisor result", logger.StringField("result", string(resultJSON)))
+	}
 
 	if result.Completed {
-		// Task completed, allow stop
+		fileLogger.Info("task completed, allowing stop")
 		fmt.Fprintf(os.Stderr, "[RESULT] Task completed, allowing stop\n")
-		fmt.Fprintf(logFile, "[%s] Task completed, allowing stop\n", timestamp)
-		logFile.Sync()
 		return nil
 	}
 
 	// Task not completed, block with feedback
-	if result.Feedback == "" {
-		result.Feedback = "Please continue completing the task"
+	// Use default feedback if empty (after trimming whitespace)
+	feedback := strings.TrimSpace(result.Feedback)
+	if feedback == "" {
+		feedback = "Please continue completing the task"
 	}
 
 	output := HookOutput{
 		Decision: "block",
-		Reason:   result.Feedback,
+		Reason:   feedback,
 	}
-	outputJSON, err := json.MarshalIndent(output, "", "  ")
+	outputJSON, err := json.Marshal(output)
 	if err != nil {
 		return fmt.Errorf("failed to marshal hook output: %w", err)
 	}
 	fmt.Println(string(outputJSON))
 
 	fmt.Fprintf(os.Stderr, "[RESULT] Task not completed\n")
-	fmt.Fprintf(os.Stderr, "Feedback: %s\n", result.Feedback)
+	fmt.Fprintf(os.Stderr, "Feedback: %s\n", feedback)
 	fmt.Fprintf(os.Stderr, "Agent will continue working based on feedback\n")
 	fmt.Fprintf(os.Stderr, "%s\n\n", strings.Repeat("=", 60))
 
-	fmt.Fprintf(logFile, "[%s] Blocking with feedback: %s\n", timestamp, result.Feedback)
-	fmt.Fprintf(logFile, "[%s] Output:\n%s\n", timestamp, string(outputJSON))
-	logFile.Sync()
+	fileLogger.Info("blocking with feedback", logger.StringField("feedback", feedback))
 
 	return nil
 }
 
-// getSupervisorPrompt reads the supervisor prompt from ~/.claude/SUPERVISOR.md
-func getSupervisorPrompt() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	supervisorPath := filepath.Join(homeDir, ".claude", "SUPERVISOR.md")
+// runSupervisorWithSDK runs the supervisor using the Claude Agent SDK with structured output.
+// The supervisor prompt is sent as a USER message, allowing SDK to load system prompts from settings.
+func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout time.Duration, log logger.Logger) (*SupervisorResult, error) {
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
-	data, err := os.ReadFile(supervisorPath)
-	if err != nil {
-		return "", err
+	// Build options for SDK
+	// - ForkSession: Create a fork to review the current session state
+	// - Resume: Load the session context (includes system/user/project prompts from settings)
+	// - SettingSources: Load system prompts from user, project, and local settings
+	// - OutputFormat: Use structured output with JSON schema for supervisor result
+	opts := types.NewClaudeAgentOptions().
+		WithForkSession(true).                                                                            // Fork the current session
+		WithResume(sessionID).                                                                            // Resume from specific session
+		WithSettingSources(types.SettingSourceUser, types.SettingSourceProject, types.SettingSourceLocal). // Load all setting sources
+		WithOutputFormat(supervisorResultSchema)                                                          // Enable structured output with JSON schema
+
+	// Set environment variable to avoid infinite loop
+	opts.Env = map[string]string{
+		"CCC_SUPERVISOR_HOOK": "1",
 	}
 
-	return string(data), nil
+	log.Debug("SDK options",
+		logger.StringField("fork_session", "true"),
+		logger.StringField("resume", sessionID),
+		logger.StringField("structured_output", "enabled"),
+	)
+
+	// Send supervisor prompt as USER message
+	// The prompt contains the review instructions, system prompts are loaded from settings
+	log.Debug("sending supervisor review request as user message")
+	messages, err := claude.Query(ctx, prompt, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SDK query: %w", err)
+	}
+
+	// Process messages and collect result
+	log.Debug("receiving messages from SDK")
+
+	var resultMessage *types.ResultMessage
+
+	for msg := range messages {
+		// Log raw message JSON for debugging
+		msgJSON, _ := json.Marshal(msg)
+		log.Debug("raw message", logger.StringField("json", string(msgJSON)))
+
+		switch m := msg.(type) {
+		case *types.AssistantMessage:
+			// Log assistant messages for debugging
+			for _, block := range m.Content {
+				if textBlock, ok := block.(*types.TextBlock); ok {
+					log.Debug("assistant text block",
+						logger.StringField("text", textBlock.Text),
+					)
+				}
+			}
+		case *types.ResultMessage:
+			resultMessage = m
+			log.Debug("result message",
+				logger.StringField("subtype", m.Subtype),
+				logger.StringField("result", safeString(m.Result)),
+				logger.StringField("cost", fmt.Sprintf("%.4f", float64Value(m.TotalCostUSD))),
+				logger.StringField("has_structured_output", fmt.Sprintf("%v", m.StructuredOutput != nil)),
+			)
+		case *types.SystemMessage:
+			log.Debug("system message",
+				logger.StringField("subtype", m.Subtype),
+			)
+		case *types.UserMessage:
+			log.Debug("user message (echo)")
+		}
+	}
+
+	// Extract structured output from ResultMessage
+	if resultMessage == nil {
+		log.Warn("no result message received from SDK")
+		return nil, fmt.Errorf("no result message received from SDK")
+	}
+
+	// Try structured output first (preferred path)
+	if resultMessage.StructuredOutput != nil {
+		result, err := parseStructuredOutput(resultMessage.StructuredOutput)
+		if err != nil {
+			log.Error("failed to parse structured output", logger.StringField("error", err.Error()))
+			return nil, fmt.Errorf("failed to parse structured output: %w", err)
+		}
+		log.Info("successfully parsed supervisor result from structured output")
+		return result, nil
+	}
+
+	// Fallback: try parsing from Result field (for backward compatibility)
+	log.Warn("no structured output in result message, falling back to result field")
+	if resultMessage.Result != nil {
+		result, err := parseResultFromMap(*resultMessage.Result)
+		if err == nil {
+			log.Info("successfully parsed result from ResultMessage.Result field")
+			return result, nil
+		}
+		log.Warn("failed to parse ResultMessage.Result", logger.StringField("error", err.Error()))
+	}
+
+	return nil, fmt.Errorf("no structured output in result message and failed to parse Result field")
+}
+
+// parseStructuredOutput parses the structured output from the SDK into a SupervisorResult.
+func parseStructuredOutput(output interface{}) (*SupervisorResult, error) {
+	return parseResultFromMap(output)
+}
+
+// parseResultFromMap parses a map[string]interface{} into a SupervisorResult.
+// This is used by both parseStructuredOutput and parseResultJSON.
+func parseResultFromMap(data interface{}) (*SupervisorResult, error) {
+	outputMap, ok := data.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("parsed result is not a map, got %T", data)
+	}
+
+	result := &SupervisorResult{}
+
+	// Extract completed field (boolean)
+	if completed, ok := outputMap["completed"].(bool); ok {
+		result.Completed = completed
+	} else {
+		return nil, fmt.Errorf("missing or invalid 'completed' field (expected bool)")
+	}
+
+	// Extract feedback field (string)
+	if feedback, ok := outputMap["feedback"].(string); ok {
+		result.Feedback = feedback
+	} else {
+		return nil, fmt.Errorf("missing or invalid 'feedback' field (expected string)")
+	}
+
+	return result, nil
+}
+
+// parseResultJSON parses the JSON text into a SupervisorResult.
+// This is a fallback function when structured output is not available.
+// It uses the llmparser package for fault-tolerant JSON parsing.
+func parseResultJSON(jsonText string) (*SupervisorResult, error) {
+	// Use llmparser for fault-tolerant JSON parsing with schema validation
+	parsed, err := llmparser.Parse(jsonText, supervisorResultSchema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	return parseResultFromMap(parsed)
+}
+
+// float64Value safely dereferences a float64 pointer.
+func float64Value(p *float64) float64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// safeString safely dereferences a string pointer.
+func safeString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // getDefaultSupervisorPrompt returns the default supervisor prompt.
@@ -364,10 +431,10 @@ func getDefaultSupervisorPrompt() string {
 
 ## 输出格式
 
-调用StructuredOutput工具提供JSON结果:
-{"completed": boolean, "feedback": "string"}
+你的回复必须符合指定的 JSON Schema 格式，包含以下字段：
+- completed (boolean): 任务是否已完成
+- feedback (string): 当任务未完成时的具体反馈建议
 
 请仔细回顾用户需求和方案规划，充分阅读所有的改动以及相关文档/代码等，严格检查评估当前任务的情况。
-调用StructuredOutput工具成功提交反馈后立即停止，不需要再做任何其他工作。
-`
+提交结果后立即停止，不需要再做任何其他工作。`
 }

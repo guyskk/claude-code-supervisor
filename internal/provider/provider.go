@@ -10,9 +10,26 @@ import (
 	"github.com/guyskk/ccc/internal/config"
 )
 
+// EnvPair represents a single environment variable key-value pair.
+type EnvPair struct {
+	Key   string
+	Value string
+}
+
+// SwitchResult contains the result of switching providers.
+// It includes the merged env variables that should be passed to the child process.
+type SwitchResult struct {
+	// Settings is the merged settings (without env) that was saved to settings.json
+	Settings map[string]interface{}
+	// EnvVars contains the merged environment variables (settings.env + provider.env)
+	// that should be passed to the claude subprocess
+	EnvVars []EnvPair
+}
+
 // Switch switches to the specified provider by merging configurations.
-// It saves the merged settings to settings.json and updates the current provider in ccc.json.
-func Switch(cfg *config.Config, providerName string) (map[string]interface{}, error) {
+// It saves the merged settings (without env) to settings.json and returns the merged env.
+// The env variables should be passed to the claude subprocess as environment variables.
+func Switch(cfg *config.Config, providerName string) (*SwitchResult, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -27,8 +44,19 @@ func Switch(cfg *config.Config, providerName string) (map[string]interface{}, er
 	// Start with the base settings template
 	mergedSettings := config.DeepMerge(cfg.Settings, providerSettings)
 
-	// Save the merged settings to settings.json
-	if err := config.SaveSettings(mergedSettings); err != nil {
+	// Extract env before removing it from settings
+	envMap := config.GetEnv(mergedSettings)
+
+	// Remove env from settings before saving (env will be passed via environment variables)
+	settingsWithoutEnv := make(map[string]interface{})
+	for k, v := range mergedSettings {
+		if k != "env" {
+			settingsWithoutEnv[k] = v
+		}
+	}
+
+	// Save the settings without env to settings.json
+	if err := config.SaveSettings(settingsWithoutEnv); err != nil {
 		return nil, fmt.Errorf("failed to save settings: %w", err)
 	}
 
@@ -38,7 +66,125 @@ func Switch(cfg *config.Config, providerName string) (map[string]interface{}, er
 		return nil, fmt.Errorf("failed to update current provider: %w", err)
 	}
 
-	return mergedSettings, nil
+	// Convert env map to EnvPair slice
+	envVars := envMapToPairs(envMap)
+
+	return &SwitchResult{
+		Settings: settingsWithoutEnv,
+		EnvVars:  envVars,
+	}, nil
+}
+
+// SwitchWithHook switches to the specified provider and adds Stop hook configuration.
+// It generates settings.json (without env) with Stop hook for Supervisor mode.
+// Returns the merged env that should be passed to the claude subprocess.
+func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+
+	// Check if provider exists
+	providerSettings, exists := cfg.Providers[providerName]
+	if !exists {
+		return nil, fmt.Errorf("provider '%s' not found in configuration", providerName)
+	}
+
+	// Create the merged settings
+	mergedSettings := config.DeepMerge(cfg.Settings, providerSettings)
+
+	// Extract env before removing it from settings
+	envMap := config.GetEnv(mergedSettings)
+
+	// Get ccc absolute path for hook command
+	cccPath, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ccc executable path: %w", err)
+	}
+
+	// Build hook command (no --state-dir parameter, state dir is handled internally)
+	hookCommand := fmt.Sprintf("%s supervisor-hook", cccPath)
+
+	// Build settings with hook, but without env
+	settingsWithHook := make(map[string]interface{})
+	for k, v := range mergedSettings {
+		if k != "env" {
+			settingsWithHook[k] = v
+		}
+	}
+
+	// Ensure hooks are enabled (these settings may prevent hooks from executing)
+	settingsWithHook["disableAllHooks"] = false
+	settingsWithHook["allowManagedHooksOnly"] = false
+
+	// Create hooks configuration
+	hooks := map[string]interface{}{
+		"Stop": []map[string]interface{}{
+			{
+				"hooks": []map[string]interface{}{
+					{
+						"type":    "command",
+						"command": hookCommand,
+						"timeout": 600,
+					},
+				},
+			},
+		},
+	}
+	settingsWithHook["hooks"] = hooks
+
+	// Save settings with hook (without env) to settings.json
+	settingsPath := config.GetSettingsPath()
+	settingsData, err := json.MarshalIndent(settingsWithHook, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal settings: %w", err)
+	}
+	if err := os.WriteFile(settingsPath, settingsData, 0644); err != nil {
+		return nil, fmt.Errorf("failed to write settings: %w", err)
+	}
+
+	// Update current_provider in ccc.json
+	cfg.CurrentProvider = providerName
+	if err := config.Save(cfg); err != nil {
+		return nil, fmt.Errorf("failed to update current provider: %w", err)
+	}
+
+	// Convert env map to EnvPair slice
+	envVars := envMapToPairs(envMap)
+
+	return &SwitchResult{
+		Settings: settingsWithHook,
+		EnvVars:  envVars,
+	}, nil
+}
+
+// envMapToPairs converts a map[string]interface{} to []EnvPair.
+// It expands environment variable references like ${VAR}.
+func envMapToPairs(envMap map[string]interface{}) []EnvPair {
+	if envMap == nil {
+		return nil
+	}
+
+	pairs := make([]EnvPair, 0, len(envMap))
+	for k, v := range envMap {
+		value := fmt.Sprintf("%v", v)
+		// Expand environment variable references
+		value = os.ExpandEnv(value)
+		pairs = append(pairs, EnvPair{Key: k, Value: value})
+	}
+	return pairs
+}
+
+// EnvPairsToStrings converts []EnvPair to []string in "KEY=value" format.
+func EnvPairsToStrings(pairs []EnvPair) []string {
+	if pairs == nil {
+		return nil
+	}
+
+	result := make([]string, len(pairs))
+	for i, pair := range pairs {
+		result[i] = fmt.Sprintf("%s=%s", pair.Key, pair.Value)
+	}
+	return result
 }
 
 // FormatProviderName formats a provider name for display.
@@ -138,74 +284,4 @@ func GetBaseURL(settings map[string]interface{}) string {
 // This is a convenience wrapper around config.GetModel.
 func GetModel(settings map[string]interface{}) string {
 	return config.GetModel(settings)
-}
-
-// SwitchWithHook switches to the specified provider and adds Stop hook configuration.
-// It generates settings.json with Stop hook for Supervisor mode.
-func SwitchWithHook(cfg *config.Config, providerName string) error {
-	if cfg == nil {
-		return fmt.Errorf("config is nil")
-	}
-
-	// Check if provider exists
-	providerSettings, exists := cfg.Providers[providerName]
-	if !exists {
-		return fmt.Errorf("provider '%s' not found in configuration", providerName)
-	}
-
-	// Create the merged settings
-	mergedSettings := config.DeepMerge(cfg.Settings, providerSettings)
-
-	// Get ccc absolute path for hook command
-	cccPath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to get ccc executable path: %w", err)
-	}
-
-	// Build hook command (no --state-dir parameter, state dir is handled internally)
-	hookCommand := fmt.Sprintf("%s supervisor-hook", cccPath)
-
-	// Add Stop hook to merged settings
-	settingsWithHook := make(map[string]interface{})
-	for k, v := range mergedSettings {
-		settingsWithHook[k] = v
-	}
-
-	// Ensure hooks are enabled (these settings may prevent hooks from executing)
-	settingsWithHook["disableAllHooks"] = false
-	settingsWithHook["allowManagedHooksOnly"] = false
-
-	// Create hooks configuration
-	hooks := map[string]interface{}{
-		"Stop": []map[string]interface{}{
-			{
-				"hooks": []map[string]interface{}{
-					{
-						"type":    "command",
-						"command": hookCommand,
-						"timeout": 600,
-					},
-				},
-			},
-		},
-	}
-	settingsWithHook["hooks"] = hooks
-
-	// Save settings with hook to settings.json
-	settingsPath := config.GetSettingsPath()
-	settingsData, err := json.MarshalIndent(settingsWithHook, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal settings: %w", err)
-	}
-	if err := os.WriteFile(settingsPath, settingsData, 0644); err != nil {
-		return fmt.Errorf("failed to write settings: %w", err)
-	}
-
-	// Update current_provider in ccc.json
-	cfg.CurrentProvider = providerName
-	if err := config.Save(cfg); err != nil {
-		return fmt.Errorf("failed to update current provider: %w", err)
-	}
-
-	return nil
 }

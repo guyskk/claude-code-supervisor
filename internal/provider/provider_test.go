@@ -72,19 +72,33 @@ func TestSwitch(t *testing.T) {
 		}
 
 		// Switch to glm
-		settings, err := Switch(cfg, "glm")
+		result, err := Switch(cfg, "glm")
 		if err != nil {
 			t.Fatalf("Switch() error = %v", err)
 		}
 
-		// Verify merged settings
-		env := config.GetEnv(settings)
-		if env["ANTHROPIC_BASE_URL"] != "https://open.bigmodel.cn/api/anthropic" {
-			t.Errorf("BASE_URL = %v, want glm URL", env["ANTHROPIC_BASE_URL"])
+		// Verify env vars
+		if result.EnvVars == nil {
+			t.Fatal("Switch() result.EnvVars should not be nil")
+		}
+
+		// Build env map for easier testing
+		envMap := make(map[string]string)
+		for _, pair := range result.EnvVars {
+			envMap[pair.Key] = pair.Value
+		}
+
+		if envMap["ANTHROPIC_BASE_URL"] != "https://open.bigmodel.cn/api/anthropic" {
+			t.Errorf("BASE_URL = %v, want glm URL", envMap["ANTHROPIC_BASE_URL"])
 		}
 		// Base env should be preserved
-		if env["API_TIMEOUT"] != "30000" {
-			t.Errorf("API_TIMEOUT = %v, want 30000", env["API_TIMEOUT"])
+		if envMap["API_TIMEOUT"] != "30000" {
+			t.Errorf("API_TIMEOUT = %v, want 30000", envMap["API_TIMEOUT"])
+		}
+
+		// Verify settings does not contain env
+		if _, exists := result.Settings["env"]; exists {
+			t.Error("Settings should not contain 'env' field")
 		}
 
 		// Verify current_provider updated
@@ -120,6 +134,37 @@ func TestSwitch(t *testing.T) {
 			t.Fatal("Switch() should error for nil config")
 		}
 	})
+}
+
+func TestEnvPairsToStrings(t *testing.T) {
+	pairs := []EnvPair{
+		{Key: "FOO", Value: "bar"},
+		{Key: "BAZ", Value: "qux"},
+	}
+
+	result := EnvPairsToStrings(pairs)
+	if len(result) != 2 {
+		t.Fatalf("EnvPairsToStrings() returned %d items, want 2", len(result))
+	}
+
+	// Check format - order may vary since we're using a slice
+	foundFoo := false
+	foundBaz := false
+	for _, s := range result {
+		if s == "FOO=bar" {
+			foundFoo = true
+		}
+		if s == "BAZ=qux" {
+			foundBaz = true
+		}
+	}
+
+	if !foundFoo {
+		t.Error("EnvPairsToStrings() should contain FOO=bar")
+	}
+	if !foundBaz {
+		t.Error("EnvPairsToStrings() should contain BAZ=qux")
+	}
 }
 
 func TestGetAuthToken(t *testing.T) {

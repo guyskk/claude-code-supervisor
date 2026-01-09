@@ -122,19 +122,17 @@ Commands:
 
 Environment Variables:
   CCC_CONFIG_DIR     Override the configuration directory (default: ~/.claude/)
-  CCC_SUPERVISOR     Enable Supervisor mode (set to "1" to enable)
+  CCC_SUPERVISOR     Configure Supervisor mode (set "1" to enable, "0" to disable)
 
 Supervisor Mode:
-  When CCC_SUPERVISOR=1 is set, ccc automatically runs a Supervisor check
+  When enabled, ccc automatically runs a Supervisor check
   after each Agent stop. The Supervisor reviews the work quality and provides
   feedback if incomplete. Creates an action-feedback loop until the Supervisor
   confirms task completion.
 
   Example:
     export CCC_SUPERVISOR=1
-    ccc glm --debug
-
-  Requires a SUPERVISOR.md file in ~/.claude/SUPERVISOR.md.
+    ccc glm
 `
 	fmt.Print(help)
 
@@ -235,8 +233,18 @@ func Run(cmd *Command) error {
 		return fmt.Errorf("no providers configured")
 	}
 
-	// Check if supervisor mode is enabled via environment variable
-	supervisorEnabled := os.Getenv("CCC_SUPERVISOR") == "1"
+	// Check if supervisor mode is enabled
+	supervisorCfg, err := config.LoadSupervisorConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load supervisor config: %w", err)
+	}
+	supervisorEnabled := supervisorCfg.Enabled
+	switch os.Getenv("CCC_SUPERVISOR") {
+	case "1":
+		supervisorEnabled = true
+	case "0":
+		supervisorEnabled = false
+	}
 
 	// Run claude with the provider (handles both normal and supervisor mode)
 	return runClaude(cfg, providerName, cmd.ClaudeArgs, supervisorEnabled)

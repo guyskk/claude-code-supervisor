@@ -18,7 +18,8 @@ type State struct {
 }
 
 // DefaultMaxIterations is the maximum number of supervisor iterations before allowing stop.
-const DefaultMaxIterations = 10
+// Updated from 10 to 20 to give supervisor more chances to complete the task.
+const DefaultMaxIterations = 20
 
 // GetStateDir returns the directory for supervisor state files.
 func GetStateDir() (string, error) {
