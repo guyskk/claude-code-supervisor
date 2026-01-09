@@ -314,29 +314,46 @@ func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout
 	resultText := *resultMessage.Result
 	log.Debug("parsing JSON from result field", logger.StringField("result_text", resultText))
 
-	result, err := parseResultJSON(resultText)
-	if err != nil {
-		log.Error("failed to parse result JSON", logger.StringField("error", err.Error()))
-		return nil, fmt.Errorf("failed to parse result JSON: %w", err)
+	result := parseResultJSON(resultText)
+
+	if result.AllowStop {
+		log.Info("supervisor result: allow_stop=true (work satisfactory)")
+	} else {
+		log.Info("supervisor result: allow_stop=false (needs more work)",
+			logger.StringField("feedback", result.Feedback))
 	}
 
-	log.Info("successfully parsed supervisor result")
 	return result, nil
 }
 
 // parseResultJSON parses the JSON text into a SupervisorResult.
 // It uses the llmparser package for fault-tolerant JSON parsing.
-func parseResultJSON(jsonText string) (*SupervisorResult, error) {
+// When parsing fails, it returns a fallback result with allow_stop=false
+// and the original text as feedback, allowing the agent to continue working.
+func parseResultJSON(jsonText string) *SupervisorResult {
 	// Use llmparser for fault-tolerant JSON parsing with schema validation
 	parsed, err := llmparser.Parse(jsonText, supervisorResultSchema)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+		// Fallback: parsing failed, use original text as feedback
+		// This allows the agent to continue working instead of failing
+		fallbackText := strings.TrimSpace(jsonText)
+		if fallbackText == "" {
+			fallbackText = "请继续完成任务"
+		}
+		return &SupervisorResult{
+			AllowStop: false,
+			Feedback:  fallbackText,
+		}
 	}
 
 	// Convert parsed interface{} to SupervisorResult
 	outputMap, ok := parsed.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("parsed result is not a map, got %T", parsed)
+		// Fallback: wrong type
+		return &SupervisorResult{
+			AllowStop: false,
+			Feedback:  strings.TrimSpace(jsonText),
+		}
 	}
 
 	result := &SupervisorResult{}
@@ -345,17 +362,22 @@ func parseResultJSON(jsonText string) (*SupervisorResult, error) {
 	if allowStop, ok := outputMap["allow_stop"].(bool); ok {
 		result.AllowStop = allowStop
 	} else {
-		return nil, fmt.Errorf("missing or invalid 'allow_stop' field (expected bool)")
+		// Fallback: missing or invalid allow_stop field
+		return &SupervisorResult{
+			AllowStop: false,
+			Feedback:  strings.TrimSpace(jsonText),
+		}
 	}
 
 	// Extract feedback field (string)
 	if feedback, ok := outputMap["feedback"].(string); ok {
 		result.Feedback = feedback
 	} else {
-		return nil, fmt.Errorf("missing or invalid 'feedback' field (expected string)")
+		// Fallback: missing or invalid feedback field
+		result.Feedback = strings.TrimSpace(jsonText)
 	}
 
-	return result, nil
+	return result
 }
 
 // float64Value safely dereferences a float64 pointer.

@@ -11,21 +11,18 @@ func TestParseResultJSON(t *testing.T) {
 		jsonText     string
 		wantAllow    bool
 		wantFeedback string
-		wantErr      bool
 	}{
 		{
 			name:         "valid json - allow stop true",
 			jsonText:     `{"allow_stop": true, "feedback": "work is complete"}`,
 			wantAllow:    true,
 			wantFeedback: "work is complete",
-			wantErr:      false,
 		},
 		{
 			name:         "valid json - allow stop false",
 			jsonText:     `{"allow_stop": false, "feedback": "needs more work"}`,
 			wantAllow:    false,
 			wantFeedback: "needs more work",
-			wantErr:      false,
 		},
 		{
 			// llmparser can repair JSON with trailing commas
@@ -33,7 +30,6 @@ func TestParseResultJSON(t *testing.T) {
 			jsonText:     `{"allow_stop": true, "feedback": "test",}`,
 			wantAllow:    true,
 			wantFeedback: "test",
-			wantErr:      false,
 		},
 		{
 			// llmparser can extract JSON from markdown code blocks
@@ -41,45 +37,69 @@ func TestParseResultJSON(t *testing.T) {
 			jsonText:     "Some text\n```json\n{\"allow_stop\": false, \"feedback\": \"keep going\"}\n```\nMore text",
 			wantAllow:    false,
 			wantFeedback: "keep going",
-			wantErr:      false,
 		},
 		{
-			// Missing required field - schema validation fails
-			name:     "missing required feedback field",
-			jsonText: `{"allow_stop": true}`,
-			wantErr:  true,
+			// Fallback: missing required field - use original text as feedback
+			name:         "missing required feedback field - fallback",
+			jsonText:     `{"allow_stop": true}`,
+			wantAllow:    false,
+			wantFeedback: `{"allow_stop": true}`,
 		},
 		{
-			name:     "missing required allow_stop field",
-			jsonText: `{"feedback": "some feedback"}`,
-			wantErr:  true,
+			// Fallback: missing required allow_stop field - use original text as feedback
+			name:         "missing required allow_stop field - fallback",
+			jsonText:     `{"feedback": "some feedback"}`,
+			wantAllow:    false,
+			wantFeedback: `{"feedback": "some feedback"}`,
 		},
 		{
-			name:     "empty string",
-			jsonText: "",
-			wantErr:  true,
+			// Fallback: empty string - use default feedback
+			name:         "empty string - fallback with default",
+			jsonText:     "",
+			wantAllow:    false,
+			wantFeedback: "请继续完成任务",
 		},
 		{
-			name:     "not json",
-			jsonText: `just plain text`,
-			wantErr:  true,
+			// Fallback: not json - use original text as feedback
+			name:         "not json - fallback",
+			jsonText:     "just plain text",
+			wantAllow:    false,
+			wantFeedback: "just plain text",
+		},
+		{
+			// Fallback: invalid JSON-like content
+			name:         "invalid json - fallback",
+			jsonText:     "{broken json",
+			wantAllow:    false,
+			wantFeedback: "{broken json",
+		},
+		{
+			// Fallback: whitespace only - use default feedback
+			name:         "whitespace only - fallback with default",
+			jsonText:     "   \n\t  ",
+			wantAllow:    false,
+			wantFeedback: "请继续完成任务",
+		},
+		{
+			// Fallback: Chinese text feedback
+			name:         "chinese feedback - fallback",
+			jsonText:     "任务还没有完成，请继续",
+			wantAllow:    false,
+			wantFeedback: "任务还没有完成，请继续",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseResultJSON(tt.jsonText)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseResultJSON() error = %v, wantErr %v", err, tt.wantErr)
-				return
+			result := parseResultJSON(tt.jsonText)
+			if result == nil {
+				t.Fatal("parseResultJSON() returned nil result")
 			}
-			if !tt.wantErr {
-				if result.AllowStop != tt.wantAllow {
-					t.Errorf("parseResultJSON() allow_stop = %v, want %v", result.AllowStop, tt.wantAllow)
-				}
-				if result.Feedback != tt.wantFeedback {
-					t.Errorf("parseResultJSON() feedback = %v, want %v", result.Feedback, tt.wantFeedback)
-				}
+			if result.AllowStop != tt.wantAllow {
+				t.Errorf("parseResultJSON() allow_stop = %v, want %v", result.AllowStop, tt.wantAllow)
+			}
+			if result.Feedback != tt.wantFeedback {
+				t.Errorf("parseResultJSON() feedback = %q, want %q", result.Feedback, tt.wantFeedback)
 			}
 		})
 	}

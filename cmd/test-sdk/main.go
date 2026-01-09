@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	fmt.Println("=== Claude Agent SDK Configuration Test ===\n")
+	fmt.Println("=== Claude Agent SDK Configuration Test ===")
 
 	// Test 1: Verify options structure
 	fmt.Println("Test 1: SDK Options Structure")
