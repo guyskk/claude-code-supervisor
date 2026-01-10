@@ -38,6 +38,7 @@ Create `~/.claude/ccc.json`:
       "defaultMode": "acceptEdits"
     }
   },
+  "current_provider": "kimi",
   "providers": {
     "kimi": {
       "env": {
@@ -57,7 +58,10 @@ Create `~/.claude/ccc.json`:
 }
 ```
 
-> **Note**: This is a minimal configuration to get you started quickly. For complete configuration options including advanced settings, see the [Configuration](#configuration) section below.
+> **Note**: This is a minimal configuration to get you started quickly.
+> - `current_provider` is auto-managed by `ccc` (set to your preferred provider)
+> - For complete configuration options including advanced settings, see the [Configuration](#configuration) section below
+> - **If planning to use Supervisor Mode**, change `"defaultMode": "acceptEdits"` to `"defaultMode": "bypassPermissions"` (see [Supervisor Mode](#supervisor-mode-recommended) below for details)
 
 ### 3. Use
 
@@ -81,12 +85,17 @@ Supervisor Mode is the most valuable feature of `ccc`. It automatically reviews 
 
 ### Enable Supervisor Mode
 
-**Important**: Supervisor Mode requires `bypassPermissions` to work without user confirmation for each hook call. Add this to your `ccc.json`:
+**Important**: Supervisor Mode requires `bypassPermissions` to work without user confirmation for each hook call.
+
+> **Security Note**: `bypassPermissions` allows Claude Code to execute tools without confirmation. While necessary for Supervisor Mode's automatic workflow, be aware of the security implications and only use this in trusted environments.
+
+If you followed the Quick Start configuration above, update your `ccc.json`:
 
 ```json
 {
   "settings": {
     "permissions": {
+      "allow": ["Edit", "MultiEdit", "Write", "WebFetch", "WebSearch"],
       "defaultMode": "bypassPermissions"
     }
   }

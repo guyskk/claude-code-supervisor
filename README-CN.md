@@ -38,6 +38,7 @@ OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed -e 's/x86_64/
       "defaultMode": "acceptEdits"
     }
   },
+  "current_provider": "kimi",
   "providers": {
     "kimi": {
       "env": {
@@ -57,7 +58,10 @@ OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed -e 's/x86_64/
 }
 ```
 
-> **注意**：这是快速上手的最小化配置。完整配置选项（包括高级设置）请参阅下方的[配置](#配置)章节。
+> **注意**：这是快速上手的最小化配置。
+> - `current_provider` 由 `ccc` 自动管理（设置为你的首选提供商）
+> - 完整配置选项（包括高级设置）请参阅下方的[配置](#配置)章节
+> - **如果计划使用 Supervisor 模式**，请将 `"defaultMode": "acceptEdits"` 改为 `"defaultMode": "bypassPermissions"`（详见下方的 [Supervisor 模式](#supervisor-模式推荐)）
 
 ### 3. 使用
 
@@ -81,12 +85,17 @@ Supervisor 模式是 `ccc` 最有价值的特性。它会在 Agent 每次停止�
 
 ### 启用 Supervisor 模式
 
-**重要**：Supervisor 模式需要 `bypassPermissions` 才能无需用户确认每次 hook 调用。在你的 `ccc.json` 中添加：
+**重要**：Supervisor 模式需要 `bypassPermissions` 才能无需用户确认每次 hook 调用。
+
+> **安全提示**：`bypassPermissions` 允许 Claude Code 无需确认即可执行工具。虽然这是 Supervisor 模式自动工作流的必要配置，但请注意安全影响，仅在受信任的环境中使用。
+
+如果你按照上面的快速开始配置，需要更新 `ccc.json` 中的 `settings.permissions` 部分：
 
 ```json
 {
   "settings": {
     "permissions": {
+      "allow": ["Edit", "MultiEdit", "Write", "WebFetch", "WebSearch"],
       "defaultMode": "bypassPermissions"
     }
   }
