@@ -57,6 +57,8 @@ Create `~/.claude/ccc.json`:
 }
 ```
 
+> **Note**: This is a minimal configuration to get you started quickly. For complete configuration options including advanced settings, see the [Configuration](#configuration) section below.
+
 ### 3. Use
 
 ```bash
@@ -219,7 +221,11 @@ Override with: `CCC_CONFIG_DIR` environment variable
     "alwaysThinkingEnabled": true,
     "env": {
       "API_TIMEOUT_MS": "300000",
-      "DISABLE_TELEMETRY": "1"
+      "DISABLE_TELEMETRY": "1",
+      "DISABLE_ERROR_REPORTING": "1",
+      "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
+      "DISABLE_BUG_COMMAND": "1",
+      "DISABLE_COST_WARNINGS": "1"
     }
   },
   "claude_args": ["--verbose", "--debug"],
