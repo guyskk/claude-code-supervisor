@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -13,15 +12,15 @@ import (
 type SupervisorConfig struct {
 	// Enabled indicates if Supervisor Mode is enabled.
 	// Can be overridden by CCC_SUPERVISOR environment variable.
-	Enabled bool
+	Enabled bool `json:"enabled"`
 
 	// MaxIterations is the maximum number of supervisor iterations before allowing stop.
 	// Default is 20.
-	MaxIterations int
+	MaxIterations int `json:"max_iterations"`
 
 	// TimeoutSeconds is the timeout for each supervisor call in seconds.
 	// Default is 600 (10 minutes).
-	TimeoutSeconds int
+	TimeoutSeconds int `json:"timeout_seconds"`
 }
 
 // DefaultSupervisorConfig returns the default supervisor configuration.
@@ -45,43 +44,18 @@ func LoadSupervisorConfig() (*SupervisorConfig, error) {
 	// Start with defaults
 	supervisorCfg := DefaultSupervisorConfig()
 
-	// Extract supervisor section from config if it exists
-	if supervisorMap, exists := cfg.Settings["supervisor"]; exists {
-		if supervisorSection, ok := supervisorMap.(map[string]interface{}); ok {
-			// Parse enabled
-			if enabledVal, exists := supervisorSection["enabled"]; exists {
-				if enabled, ok := enabledVal.(bool); ok {
-					supervisorCfg.Enabled = enabled
-				}
-			}
-
-			// Parse max_iterations
-			if maxIterVal, exists := supervisorSection["max_iterations"]; exists {
-				switch v := maxIterVal.(type) {
-				case float64:
-					supervisorCfg.MaxIterations = int(v)
-				case int:
-					supervisorCfg.MaxIterations = v
-				case string:
-					if i, err := strconv.Atoi(v); err == nil {
-						supervisorCfg.MaxIterations = i
-					}
-				}
-			}
-
-			// Parse timeout_seconds
-			if timeoutVal, exists := supervisorSection["timeout_seconds"]; exists {
-				switch v := timeoutVal.(type) {
-				case float64:
-					supervisorCfg.TimeoutSeconds = int(v)
-				case int:
-					supervisorCfg.TimeoutSeconds = v
-				case string:
-					if i, err := strconv.Atoi(v); err == nil {
-						supervisorCfg.TimeoutSeconds = i
-					}
-				}
-			}
+	// Merge supervisor config from top level if it exists
+	// We merge instead of replace to preserve defaults for unset fields
+	if cfg.Supervisor != nil {
+		// Only override non-zero values
+		if cfg.Supervisor.Enabled {
+			supervisorCfg.Enabled = true
+		}
+		if cfg.Supervisor.MaxIterations > 0 {
+			supervisorCfg.MaxIterations = cfg.Supervisor.MaxIterations
+		}
+		if cfg.Supervisor.TimeoutSeconds > 0 {
+			supervisorCfg.TimeoutSeconds = cfg.Supervisor.TimeoutSeconds
 		}
 	}
 

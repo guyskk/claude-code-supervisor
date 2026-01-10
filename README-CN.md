@@ -41,12 +41,12 @@ OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed -e 's/x86_64/
     "permissions": {
       "allow": ["Edit", "MultiEdit", "Write", "WebFetch", "WebSearch"],
       "defaultMode": "bypassPermissions"
-    },
-    "supervisor": {
-      "enabled": true,
-      "max_iterations": 20,
-      "timeout_seconds": 600
     }
+  },
+  "supervisor": {
+    "enabled": true,
+    "max_iterations": 20,
+    "timeout_seconds": 600
   },
   "current_provider": "kimi",
   "providers": {
@@ -238,6 +238,37 @@ ccc --debug --verbose
 
 ## 配置
 
+### 破坏性变更：Supervisor 配置位置
+
+**重要**：如果您现有的 ccc 配置中 `supervisor` 嵌套在 `settings` 内部，必须将其移至顶层。
+
+**旧格式（不再支持）：**
+```json
+{
+  "settings": {
+    "supervisor": {
+      "enabled": true,
+      "max_iterations": 20,
+      "timeout_seconds": 600
+    }
+  }
+}
+```
+
+**新格式（必需）：**
+```json
+{
+  "settings": {},
+  "supervisor": {
+    "enabled": true,
+    "max_iterations": 20,
+    "timeout_seconds": 600
+  }
+}
+```
+
+`supervisor` 配置现在必须位于 `ccc.json` 的顶层，与 `settings`、`providers` 和 `current_provider` 同级。
+
 ### 配置文件位置
 
 默认：`~/.claude/ccc.json`
@@ -252,11 +283,6 @@ ccc --debug --verbose
       "allow": ["Edit", "MultiEdit", "Write", "WebFetch", "WebSearch"],
       "defaultMode": "bypassPermissions"
     },
-    "supervisor": {
-      "enabled": true,
-      "max_iterations": 20,
-      "timeout_seconds": 600
-    },
     "alwaysThinkingEnabled": true,
     "enabledPlugins": {
       "gopls-lsp@claude-plugins-official": true
@@ -266,6 +292,11 @@ ccc --debug --verbose
       "DISABLE_TELEMETRY": "1",
       "DISABLE_ERROR_REPORTING": "1"
     }
+  },
+  "supervisor": {
+    "enabled": true,
+    "max_iterations": 20,
+    "timeout_seconds": 600
   },
   "claude_args": ["--verbose"],
   "current_provider": "kimi",
@@ -295,9 +326,9 @@ ccc --debug --verbose
 |------|------|
 | `settings` | 所有提供商共享的基础模板 |
 | `settings.permissions` | 权限设置（允许列表、默认模式） |
-| `settings.supervisor` | Supervisor 模式配置 |
 | `settings.env` | 所有提供商共享的环境变量 |
 | `settings.*` | 其他 Claude Code 设置（插件、思考模式等） |
+| `supervisor` | Supervisor 模式配置（顶层字段） |
 | `claude_args` | 固定传递给 Claude Code 的参数（可选） |
 | `current_provider` | 最后使用的提供商（由 ccc 自动管理） |
 | `providers.{name}` | 提供商特定配置 |

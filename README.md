@@ -41,12 +41,12 @@ Create `~/.claude/ccc.json`:
     "permissions": {
       "allow": ["Edit", "MultiEdit", "Write", "WebFetch", "WebSearch"],
       "defaultMode": "bypassPermissions"
-    },
-    "supervisor": {
-      "enabled": true,
-      "max_iterations": 20,
-      "timeout_seconds": 600
     }
+  },
+  "supervisor": {
+    "enabled": true,
+    "max_iterations": 20,
+    "timeout_seconds": 600
   },
   "current_provider": "kimi",
   "providers": {
@@ -238,6 +238,37 @@ All arguments are passed through to Claude Code unchanged.
 
 ## Configuration
 
+### Breaking Change: Supervisor Config Location
+
+**Important**: If you have an existing ccc configuration with `supervisor` nested inside `settings`, you must move it to the top level.
+
+**Old format (no longer supported):**
+```json
+{
+  "settings": {
+    "supervisor": {
+      "enabled": true,
+      "max_iterations": 20,
+      "timeout_seconds": 600
+    }
+  }
+}
+```
+
+**New format (required):**
+```json
+{
+  "settings": {},
+  "supervisor": {
+    "enabled": true,
+    "max_iterations": 20,
+    "timeout_seconds": 600
+  }
+}
+```
+
+The `supervisor` configuration must now be at the top level of `ccc.json`, as a sibling to `settings`, `providers`, and `current_provider`.
+
 ### Config File Location
 
 Default: `~/.claude/ccc.json`
@@ -252,11 +283,6 @@ Override with: `CCC_CONFIG_DIR` environment variable
       "allow": ["Edit", "MultiEdit", "Write", "WebFetch", "WebSearch"],
       "defaultMode": "bypassPermissions"
     },
-    "supervisor": {
-      "enabled": true,
-      "max_iterations": 20,
-      "timeout_seconds": 600
-    },
     "alwaysThinkingEnabled": true,
     "enabledPlugins": {
       "gopls-lsp@claude-plugins-official": true
@@ -266,6 +292,11 @@ Override with: `CCC_CONFIG_DIR` environment variable
       "DISABLE_TELEMETRY": "1",
       "DISABLE_ERROR_REPORTING": "1"
     }
+  },
+  "supervisor": {
+    "enabled": true,
+    "max_iterations": 20,
+    "timeout_seconds": 600
   },
   "claude_args": ["--verbose"],
   "current_provider": "kimi",
@@ -295,9 +326,9 @@ Override with: `CCC_CONFIG_DIR` environment variable
 |-------|-------------|
 | `settings` | Base template shared by all providers |
 | `settings.permissions` | Permission settings (allow list, default mode) |
-| `settings.supervisor` | Supervisor mode configuration |
 | `settings.env` | Environment variables shared by all providers |
 | `settings.*` | Any other Claude Code settings (plugins, thinking mode, etc.) |
+| `supervisor` | Supervisor mode configuration (top-level) |
 | `claude_args` | Fixed arguments to pass to Claude Code (optional) |
 | `current_provider` | Last used provider (auto-managed by ccc) |
 | `providers.{name}` | Provider-specific configuration |
