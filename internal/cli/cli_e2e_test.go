@@ -323,8 +323,9 @@ func TestE2E_SupervisorMode(t *testing.T) {
 		}
 
 		// Should see supervisor mode message while process is running
-		if _, err := console.ExpectString("[Supervisor Mode enabled]"); err != nil {
-			t.Errorf("expected supervisor mode message: %v", err)
+		// The actual output format is "Supervisor enabled: tail -f <logpath>"
+		if _, err := console.ExpectString("Supervisor enabled: tail -f"); err != nil {
+			t.Errorf("expected supervisor enabled message: %v", err)
 		}
 		if _, err := console.ExpectString("Launching with provider: test1"); err != nil {
 			t.Errorf("expected launching message: %v", err)
