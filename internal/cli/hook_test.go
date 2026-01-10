@@ -110,19 +110,24 @@ func TestGetDefaultSupervisorPrompt(t *testing.T) {
 	if prompt == "" {
 		t.Error("getDefaultSupervisorPrompt() returned empty string")
 	}
-	// Check that key parts are present
-	if !strings.Contains(prompt, "Supervisor") {
-		t.Error("getDefaultSupervisorPrompt() missing 'Supervisor'")
+	// Check that key parts are present (prompt is in Chinese)
+	// The prompt uses "审查者" (reviewer) instead of "Supervisor"
+	if !strings.Contains(prompt, "审查者") && !strings.Contains(prompt, "Supervisor") {
+		t.Error("getDefaultSupervisorPrompt() missing '审查者' or 'Supervisor'")
 	}
-	if !strings.Contains(prompt, "allow_stop") {
+	if !strings.Contains(prompt, "allow_stop") && !strings.Contains(prompt, "allow_stop") {
 		t.Error("getDefaultSupervisorPrompt() missing 'allow_stop'")
 	}
-	if !strings.Contains(prompt, "feedback") {
+	if !strings.Contains(prompt, "feedback") && !strings.Contains(prompt, "feedback") {
 		t.Error("getDefaultSupervisorPrompt() missing 'feedback'")
 	}
-	// Check that the prompt mentions JSON code block format
+	// Check that the prompt mentions JSON output format
 	if !strings.Contains(prompt, "JSON") && !strings.Contains(prompt, "json") {
 		t.Error("getDefaultSupervisorPrompt() should mention JSON format")
+	}
+	// Check for key sections in the Chinese prompt
+	if !strings.Contains(prompt, "暂停当前") && !strings.Contains(prompt, "审查框架") {
+		t.Error("getDefaultSupervisorPrompt() should contain key sections")
 	}
 }
 
