@@ -4,7 +4,6 @@ package supervisor
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/guyskk/ccc/internal/logger"
@@ -59,19 +58,4 @@ func OutputDecision(log logger.Logger, allowStop bool, feedback string) error {
 	}
 
 	return nil
-}
-
-// OutputSupervisorStart outputs a message when supervisor review starts.
-func OutputSupervisorStart(log logger.Logger, logFilePath string) {
-	log.Info("starting supervisor review")
-
-	fmt.Fprintf(os.Stderr, "\n[SUPERVISOR] Reviewing work...\n")
-	fmt.Fprintf(os.Stderr, "See log file for details: %s\n\n", logFilePath)
-}
-
-// OutputSupervisorCompleted outputs a message when supervisor review completes.
-func OutputSupervisorCompleted(log logger.Logger) {
-	log.Info("supervisor review completed")
-
-	fmt.Fprintf(os.Stderr, "\n%s\n", strings.Repeat("=", 60))
 }

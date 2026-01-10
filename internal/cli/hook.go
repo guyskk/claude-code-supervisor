@@ -57,13 +57,7 @@ func RunSupervisorHook(args []string) error {
 	supervisorID := os.Getenv("CCC_SUPERVISOR_ID")
 
 	// Step 2: Create logger as early as possible
-	log, supLog, err := supervisor.NewSupervisorLogger(supervisorID)
-	if err != nil {
-		return fmt.Errorf("failed to create supervisor logger: %w", err)
-	}
-	if supLog != nil {
-		defer supLog.Close()
-	}
+	log := supervisor.NewSupervisorLogger(supervisorID)
 
 	// Step 3: Log environment variables for debugging
 	log.Debug("supervisor hook environment",
@@ -146,14 +140,11 @@ func RunSupervisorHook(args []string) error {
 	)
 
 	// Step 12: Inform user about supervisor review
-	var logFilePath string
-	if supLog != nil && supLog.IsFileLoggingEnabled() {
-		stateDir, _ := supervisor.GetStateDir()
-		logFilePath = fmt.Sprintf("%s/supervisor-%s.log", stateDir, supervisorID)
-	} else {
-		logFilePath = "stderr"
-	}
-	supervisor.OutputSupervisorStart(log, logFilePath)
+	log.Info("starting supervisor review")
+	stateDir, _ := supervisor.GetStateDir()
+	logFilePath := fmt.Sprintf("%s/supervisor-%s.log", stateDir, supervisorID)
+	fmt.Fprintf(os.Stderr, "\n[SUPERVISOR] Reviewing work...\n")
+	fmt.Fprintf(os.Stderr, "See log file for details: %s\n\n", logFilePath)
 
 	// Step 13: Run supervisor using Claude Agent SDK
 	result, err := runSupervisorWithSDK(context.Background(), sessionID, supervisorPrompt, supervisorCfg.Timeout(), log)
@@ -162,12 +153,12 @@ func RunSupervisorHook(args []string) error {
 		return fmt.Errorf("supervisor SDK failed: %w", err)
 	}
 
-	supervisor.OutputSupervisorCompleted(log)
+	log.Info("supervisor review completed")
+	fmt.Fprintf(os.Stderr, "\n%s\n", strings.Repeat("=", 60))
 
 	// Step 14: Output result based on AllowStop decision
 	if result == nil {
-		fmt.Fprintf(os.Stderr, "\n%s\n[RESULT] No supervisor result found, allowing stop\n",
-			strings.Repeat("=", 60))
+		fmt.Fprintf(os.Stderr, "[RESULT] No supervisor result found, allowing stop\n")
 		return supervisor.OutputDecision(log, true, "")
 	}
 
@@ -180,8 +171,7 @@ func RunSupervisorHook(args []string) error {
 	}
 
 	if result.AllowStop {
-		fmt.Fprintf(os.Stderr, "\n%s\n[RESULT] Work satisfactory, allowing stop\n",
-			strings.Repeat("=", 60))
+		fmt.Fprintf(os.Stderr, "[RESULT] Work satisfactory, allowing stop\n")
 		return supervisor.OutputDecision(log, true, "")
 	}
 
@@ -190,8 +180,8 @@ func RunSupervisorHook(args []string) error {
 	if feedback == "" {
 		feedback = "Please continue completing the task"
 	}
-	fmt.Fprintf(os.Stderr, "\n%s\n[RESULT] Work not satisfactory\nFeedback: %s\nAgent will continue working based on feedback\n%s\n\n",
-		strings.Repeat("=", 60), feedback, strings.Repeat("=", 60))
+	fmt.Fprintf(os.Stderr, "[RESULT] Work not satisfactory\nFeedback: %s\nAgent will continue working based on feedback\n",
+		feedback)
 	return supervisor.OutputDecision(log, false, result.Feedback)
 }
 

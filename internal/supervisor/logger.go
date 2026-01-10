@@ -25,35 +25,39 @@ type SupervisorLogger struct {
 // If supervisorID is empty, only stderr output is enabled.
 // If supervisorID is non-empty, both stderr and log file output are enabled.
 // The log file is created at ~/.claude/ccc/supervisor-{supervisorID}.log
-func NewSupervisorLogger(supervisorID string) (logger.Logger, *SupervisorLogger, error) {
+//
+// Errors are logged to stderr and a fallback logger is returned.
+func NewSupervisorLogger(supervisorID string) logger.Logger {
 	// Create stderr logger (always enabled)
 	stderrLogger := logger.NewLogger(os.Stderr, logger.LevelDebug)
 
-	var fileLogger logger.Logger
-	var logFilePath string
-
-	if supervisorID != "" {
-		// Create log file for supervisor session
-		stateDir, err := GetStateDir()
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get state directory: %w", err)
-		}
-
-		if err := os.MkdirAll(stateDir, 0755); err != nil {
-			return nil, nil, fmt.Errorf("failed to create state directory: %w", err)
-		}
-
-		logFilePath = filepath.Join(stateDir, fmt.Sprintf("supervisor-%s.log", supervisorID))
-		logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to open supervisor log file: %w", err)
-		}
-
-		// Create file logger with debug level
-		fileLogger = logger.NewLogger(logFile, logger.LevelDebug).With(
-			logger.StringField("supervisor_id", supervisorID),
-		)
+	if supervisorID == "" {
+		return stderrLogger
 	}
+
+	// Create log file for supervisor session
+	stateDir, err := GetStateDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to get state directory: %v\n", err)
+		return stderrLogger
+	}
+
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create state directory: %v\n", err)
+		return stderrLogger
+	}
+
+	logFilePath := filepath.Join(stateDir, fmt.Sprintf("supervisor-%s.log", supervisorID))
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to open supervisor log file: %v\n", err)
+		return stderrLogger
+	}
+
+	// Create file logger with debug level
+	fileLogger := logger.NewLogger(logFile, logger.LevelDebug).With(
+		logger.StringField("supervisor_id", supervisorID),
+	)
 
 	supervisorLogger := &SupervisorLogger{
 		stderrLogger: stderrLogger,
@@ -62,11 +66,9 @@ func NewSupervisorLogger(supervisorID string) (logger.Logger, *SupervisorLogger,
 
 	// Wrap with supervisor_id field for all log entries
 	resultLogger := logger.Logger(supervisorLogger)
-	if supervisorID != "" {
-		resultLogger = resultLogger.With(logger.StringField("supervisor_id", supervisorID))
-	}
+	resultLogger = resultLogger.With(logger.StringField("supervisor_id", supervisorID))
 
-	return resultLogger, supervisorLogger, nil
+	return resultLogger
 }
 
 // Debug logs a debug message to both stderr and file (if enabled).
@@ -168,17 +170,6 @@ func (l *SupervisorLogger) Close() error {
 	}
 
 	return nil
-}
-
-// LogFilePath returns the path to the log file, if enabled.
-func (l *SupervisorLogger) LogFilePath() string {
-	if l.fileLogger == nil {
-		return ""
-	}
-
-	// Extract the log file path from the file logger's underlying writer
-	// This is a bit hacky but works for our use case
-	return "" // Could be enhanced if needed
 }
 
 // IsFileLoggingEnabled returns true if file logging is enabled.
