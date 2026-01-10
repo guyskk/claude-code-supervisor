@@ -101,6 +101,7 @@ func (l *SupervisorLogger) WithAttrs(attrs []slog.Attr) slog.Handler {
 		stderrHandler: l.stderrHandler.WithAttrs(attrs),
 		fileHandler:   l.withFileHandlerAttrs(attrs),
 		logFile:       l.logFile,
+		closed:        false, // New handler is not closed
 	}
 }
 
@@ -120,6 +121,7 @@ func (l *SupervisorLogger) WithGroup(name string) slog.Handler {
 		stderrHandler: l.stderrHandler.WithGroup(name),
 		fileHandler:   l.withFileHandlerGroup(name),
 		logFile:       l.logFile,
+		closed:        false, // New handler is not closed
 	}
 }
 

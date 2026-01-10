@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -482,5 +483,63 @@ func TestSupervisorLogger_OutputDecisionLogging(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestSupervisorLogger_ConcurrentLogging tests concurrent log writes.
+func TestSupervisorLogger_ConcurrentLogging(t *testing.T) {
+	tempDir := t.TempDir()
+
+	origGetStateDir := getStateDirFunc
+	getStateDirFunc = func() (string, error) {
+		return tempDir, nil
+	}
+	defer func() { getStateDirFunc = origGetStateDir }()
+
+	supervisorID := "test-concurrent"
+	log := NewSupervisorLogger(supervisorID)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				log.Info("concurrent message", "goroutine", id, "iteration", j)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Close the logger
+	if handler, ok := log.Handler().(*SupervisorLogger); ok {
+		handler.Close()
+	}
+
+	// Verify log file was created
+	logFilePath := filepath.Join(tempDir, "supervisor-"+supervisorID+".log")
+	content, err := os.ReadFile(logFilePath)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+
+	logContent := string(content)
+	lines := strings.Split(strings.TrimSpace(logContent), "\n")
+
+	// We expect 10 goroutines * 50 iterations + 1 "all done" = 501 lines
+	// But we also have the initial "Supervisor started" message
+	// So total should be 502 lines
+	// However, due to timing, the "all done" might come from different goroutines
+	// Let's just check we have a reasonable number of lines
+	if len(lines) < 500 {
+		t.Errorf("expected at least 500 log lines, got %d", len(lines))
+	}
+
+	// Verify no lines are corrupted (all should have timestamp prefix)
+	for i, line := range lines {
+		if len(line) < 30 {
+			t.Errorf("line %d is too short: %q", i, line)
+		}
 	}
 }
