@@ -166,7 +166,12 @@ func RunSupervisorHook(args []string) error {
 
 	if result.AllowStop {
 		log.Info("work satisfactory, allowing stop")
-		return supervisor.OutputDecision(log, true, result.Feedback)
+		// Ensure feedback is not empty when allowing stop
+		feedback := strings.TrimSpace(result.Feedback)
+		if feedback == "" {
+			feedback = "Work completed satisfactorily"
+		}
+		return supervisor.OutputDecision(log, true, feedback)
 	}
 
 	// Block with feedback
