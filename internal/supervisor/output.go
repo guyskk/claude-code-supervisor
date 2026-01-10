@@ -4,9 +4,8 @@ package supervisor
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
-
-	"github.com/guyskk/ccc/internal/logger"
 )
 
 // HookOutput represents the output to stdout.
@@ -26,7 +25,7 @@ type HookOutput struct {
 // The function:
 // 1. Outputs JSON to stdout for Claude Code to parse
 // 2. Logs the decision
-func OutputDecision(log logger.Logger, allowStop bool, feedback string) error {
+func OutputDecision(log *slog.Logger, allowStop bool, feedback string) error {
 	// Trim feedback
 	feedback = strings.TrimSpace(feedback)
 
@@ -52,9 +51,7 @@ func OutputDecision(log logger.Logger, allowStop bool, feedback string) error {
 	if allowStop {
 		log.Info("supervisor output: allow stop")
 	} else {
-		log.Info("supervisor output: not allow stop",
-			logger.StringField("feedback", output.Reason),
-		)
+		log.Info("supervisor output: not allow stop", "feedback", output.Reason)
 	}
 
 	return nil

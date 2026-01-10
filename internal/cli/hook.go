@@ -6,13 +6,13 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/guyskk/ccc/internal/config"
 	"github.com/guyskk/ccc/internal/llmparser"
-	"github.com/guyskk/ccc/internal/logger"
 	"github.com/guyskk/ccc/internal/supervisor"
 	"github.com/schlunsen/claude-agent-sdk-go"
 	"github.com/schlunsen/claude-agent-sdk-go/types"
@@ -61,10 +61,10 @@ func RunSupervisorHook(args []string) error {
 
 	// Step 3: Log environment variables for debugging
 	log.Debug("supervisor hook environment",
-		logger.StringField("is_supervisor_mode", fmt.Sprintf("%t", isSupervisorMode)),
-		logger.StringField("is_supervisor_hook", fmt.Sprintf("%t", isSupervisorHook)),
-		logger.StringField("supervisor_id", supervisorID),
-		logger.StringField("args", strings.Join(args, " ")),
+		"is_supervisor_mode", isSupervisorMode,
+		"is_supervisor_hook", isSupervisorHook,
+		"supervisor_id", supervisorID,
+		"args", strings.Join(args, " "),
 	)
 
 	// Step 4: Check if this is a Supervisor's hook call (to avoid infinite loop):
@@ -100,21 +100,21 @@ func RunSupervisorHook(args []string) error {
 
 	inputJSON, err := json.MarshalIndent(input, "", "  ")
 	if err != nil {
-		log.Warn("failed to marshal hook input for logging", logger.StringField("error", err.Error()))
+		log.Warn("failed to marshal hook input for logging", "error", err.Error())
 	} else {
-		log.Debug("hook input", logger.StringField("input", string(inputJSON)))
+		log.Debug("hook input", "input", string(inputJSON))
 	}
 
 	// Step 9: Check iteration count limit using configured max_iterations
 	maxIterations := supervisorCfg.MaxIterations
 	shouldContinue, count, err := supervisor.ShouldContinue(sessionID, maxIterations)
 	if err != nil {
-		log.Warn("failed to check state", logger.StringField("error", err.Error()))
+		log.Warn("failed to check state", "error", err.Error())
 	}
 	if !shouldContinue {
 		log.Warn("max iterations reached, allowing stop",
-			logger.IntField("count", count),
-			logger.IntField("max", maxIterations),
+			"count", count,
+			"max", maxIterations,
 		)
 		fmt.Fprintf(os.Stderr, "\n%s\n[STOP] Max iterations (%d) reached, allowing stop\n%s\n\n",
 			strings.Repeat("=", 60), count, strings.Repeat("=", 60))
@@ -124,11 +124,11 @@ func RunSupervisorHook(args []string) error {
 	// Step 10: Increment count
 	newCount, err := supervisor.IncrementCount(sessionID)
 	if err != nil {
-		log.Warn("failed to increment count", logger.StringField("error", err.Error()))
+		log.Warn("failed to increment count", "error", err.Error())
 	} else {
 		log.Info("iteration count",
-			logger.IntField("count", newCount),
-			logger.IntField("max", maxIterations),
+			"count", newCount,
+			"max", maxIterations,
 		)
 		fmt.Fprintf(os.Stderr, "Iteration count: %d/%d\n", newCount, maxIterations)
 	}
@@ -136,7 +136,7 @@ func RunSupervisorHook(args []string) error {
 	// Step 11: Get default supervisor prompt (hardcoded)
 	supervisorPrompt := getDefaultSupervisorPrompt()
 	log.Debug("supervisor prompt loaded",
-		logger.IntField("prompt_length", len(supervisorPrompt)),
+		"prompt_length", len(supervisorPrompt),
 	)
 
 	// Step 12: Inform user about supervisor review
@@ -149,7 +149,7 @@ func RunSupervisorHook(args []string) error {
 	// Step 13: Run supervisor using Claude Agent SDK
 	result, err := runSupervisorWithSDK(context.Background(), sessionID, supervisorPrompt, supervisorCfg.Timeout(), log)
 	if err != nil {
-		log.Error("supervisor SDK failed", logger.StringField("error", err.Error()))
+		log.Error("supervisor SDK failed", "error", err.Error())
 		return fmt.Errorf("supervisor SDK failed: %w", err)
 	}
 
@@ -165,9 +165,9 @@ func RunSupervisorHook(args []string) error {
 	// Log the result (only once, in addition to raw message log)
 	resultJSON, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		log.Warn("failed to marshal result for logging", logger.StringField("error", err.Error()))
+		log.Warn("failed to marshal result for logging", "error", err.Error())
 	} else {
-		log.Info("supervisor result", logger.StringField("result", string(resultJSON)))
+		log.Info("supervisor result", "result", string(resultJSON))
 	}
 
 	if result.AllowStop {
@@ -187,7 +187,7 @@ func RunSupervisorHook(args []string) error {
 
 // runSupervisorWithSDK runs the supervisor using the Claude Agent SDK.
 // The supervisor prompt is sent as a USER message, and we parse the Result field for JSON output.
-func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout time.Duration, log logger.Logger) (*SupervisorResult, error) {
+func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout time.Duration, log *slog.Logger) (*SupervisorResult, error) {
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -208,8 +208,8 @@ func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout
 	opts.Env["CCC_SUPERVISOR_HOOK"] = "1"
 
 	log.Debug("SDK options",
-		logger.StringField("fork_session", "true"),
-		logger.StringField("resume", sessionID),
+		"fork_session", "true",
+		"resume", sessionID,
 	)
 
 	// Create interactive client
@@ -240,7 +240,7 @@ func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout
 	for msg := range client.ReceiveResponse(ctx) {
 		// Log raw message JSON for debugging (this is the ONE place where all messages are logged)
 		msgJSON, _ := json.Marshal(msg)
-		log.Debug("raw message", logger.StringField("json", string(msgJSON)))
+		log.Debug("raw message", "json", string(msgJSON))
 
 		switch m := msg.(type) {
 		case *types.ResultMessage:
@@ -261,7 +261,7 @@ func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout
 
 	// Parse JSON from Result field using llmparser
 	resultText := *resultMessage.Result
-	log.Debug("parsing JSON from result field", logger.StringField("result_text", resultText))
+	log.Debug("parsing JSON from result field", "result_text", resultText)
 
 	result := parseResultJSON(resultText)
 
