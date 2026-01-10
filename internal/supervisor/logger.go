@@ -240,9 +240,13 @@ func (h *friendlyTextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 }
 
 // WithGroup returns a new Handler with the given group name.
+//
+// Note: This is a simplified implementation that preserves existing attributes
+// but does not actually apply the group prefix. This is sufficient for the
+// current supervisor logging use case, which does not use groups.
+// If group functionality is needed in the future, this should be updated to
+// properly prefix grouped attributes (e.g., "group.key=value").
 func (h *friendlyTextHandler) WithGroup(name string) slog.Handler {
-	// For simplicity, group name is added as a prefix to subsequent attributes
-	// This is a simplified implementation
 	return &friendlyTextHandler{
 		writer: h.writer,
 		level:  h.level,
