@@ -33,41 +33,7 @@ OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed -e 's/x86_64/
 
 ### 2. 配置
 
-创建 `~/.claude/ccc.json`。选择你的模式：
-
-**选项 A：基础模式**（`acceptEdits` - 需要确认操作）
-
-```json
-{
-  "settings": {
-    "permissions": {
-      "allow": ["Edit", "MultiEdit", "Write", "WebFetch", "WebSearch"],
-      "defaultMode": "acceptEdits"
-    }
-  },
-  "current_provider": "kimi",
-  "providers": {
-    "kimi": {
-      "env": {
-        "ANTHROPIC_BASE_URL": "https://api.moonshot.cn/anthropic",
-        "ANTHROPIC_AUTH_TOKEN": "YOUR_API_KEY_HERE",
-        "ANTHROPIC_MODEL": "kimi-k2-thinking"
-      }
-    },
-    "glm": {
-      "env": {
-        "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
-        "ANTHROPIC_AUTH_TOKEN": "YOUR_API_KEY_HERE",
-        "ANTHROPIC_MODEL": "glm-4.7"
-      }
-    }
-  }
-}
-```
-
-**选项 B：Supervisor 模式**（`bypassPermissions` - 自动审查，详见[下方](#supervisor-模式推荐)）
-
-> **安全提示**：`bypassPermissions` 允许 Claude Code 无需确认即可执行工具。仅在受信任的环境中使用。
+创建 `~/.claude/ccc.json`：
 
 ```json
 {
@@ -75,6 +41,11 @@ OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed -e 's/x86_64/
     "permissions": {
       "allow": ["Edit", "MultiEdit", "Write", "WebFetch", "WebSearch"],
       "defaultMode": "bypassPermissions"
+    },
+    "supervisor": {
+      "enabled": true,
+      "max_iterations": 20,
+      "timeout_seconds": 600
     }
   },
   "current_provider": "kimi",
@@ -97,7 +68,7 @@ OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed -e 's/x86_64/
 }
 ```
 
-> **注意**：`current_provider` 由 `ccc` 自动管理。完整配置选项（包括高级设置）请参阅下方的[配置](#配置)章节。
+> **注意**：`current_provider` 由 `ccc` 自动管理。完整配置选项请参阅[配置](#配置)章节。
 
 ### 3. 使用
 
@@ -121,11 +92,7 @@ Supervisor 模式是 `ccc` 最有价值的特性。它会在 Agent 每次停止�
 
 ### 启用 Supervisor 模式
 
-**如果还没有配置 `ccc`**，请按照[快速开始 → 选项 B：Supervisor 模式](#%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B-5-%E5%88%86%E9%92%9F)设置 `ccc.json`，其中包含必需的 `bypassPermissions` 设置。
-
-**如果已有基础配置**，请更新 `ccc.json` 使用 `bypassPermissions`（完整配置参见[快速开始 → 选项 B](#%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B-5-%E5%88%86%E9%92%9F)）。
-
-然后启用并运行：
+在 `ccc.json` 中设置 `supervisor.enabled: true`（参见上方快速开始），或使用环境变量：
 
 ```bash
 export CCC_SUPERVISOR=1
@@ -255,26 +222,31 @@ ccc --debug --verbose
 默认：`~/.claude/ccc.json`
 通过环境变量覆盖：`CCC_CONFIG_DIR`
 
-### 配置结构
+### 完整配置示例
 
 ```json
 {
   "settings": {
     "permissions": {
       "allow": ["Edit", "MultiEdit", "Write", "WebFetch", "WebSearch"],
-      "defaultMode": "acceptEdits"
+      "defaultMode": "bypassPermissions"
+    },
+    "supervisor": {
+      "enabled": true,
+      "max_iterations": 20,
+      "timeout_seconds": 600
     },
     "alwaysThinkingEnabled": true,
+    "enabledPlugins": {
+      "gopls-lsp@claude-plugins-official": true
+    },
     "env": {
       "API_TIMEOUT_MS": "300000",
       "DISABLE_TELEMETRY": "1",
-      "DISABLE_ERROR_REPORTING": "1",
-      "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
-      "DISABLE_BUG_COMMAND": "1",
-      "DISABLE_COST_WARNINGS": "1"
+      "DISABLE_ERROR_REPORTING": "1"
     }
   },
-  "claude_args": ["--verbose", "--debug"],
+  "claude_args": ["--verbose"],
   "current_provider": "kimi",
   "providers": {
     "kimi": {
@@ -284,34 +256,61 @@ ccc --debug --verbose
         "ANTHROPIC_MODEL": "kimi-k2-thinking",
         "ANTHROPIC_SMALL_FAST_MODEL": "kimi-k2-0905-preview"
       }
+    },
+    "glm": {
+      "env": {
+        "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+        "ANTHROPIC_AUTH_TOKEN": "YOUR_API_KEY_HERE",
+        "ANTHROPIC_MODEL": "glm-4.7"
+      }
     }
   }
 }
 ```
 
+### 配置字段说明
+
 | 字段 | 说明 |
 |------|------|
 | `settings` | 所有提供商共享的基础模板 |
+| `settings.permissions` | 权限设置（允许列表、默认模式） |
+| `settings.supervisor` | Supervisor 模式配置 |
+| `settings.env` | 所有提供商共享的环境变量 |
+| `settings.*` | 其他 Claude Code 设置（插件、思考模式等） |
 | `claude_args` | 固定传递给 Claude Code 的参数（可选） |
-| `current_provider` | 最后使用的提供商（自动更新） |
-| `providers` | 提供商特定配置 |
+| `current_provider` | 最后使用的提供商（由 ccc 自动管理） |
+| `providers.{name}` | 提供商特定配置 |
+
+### 提供商配置
+
+每个提供商只需指定要覆盖的字段。常用字段：
+
+| 字段 | 说明 |
+|------|------|
+| `env.ANTHROPIC_BASE_URL` | API 端点 URL |
+| `env.ANTHROPIC_AUTH_TOKEN` | API 密钥/令牌 |
+| `env.ANTHROPIC_MODEL` | 使用的主模型 |
+| `env.ANTHROPIC_SMALL_FAST_MODEL` | 快速任务使用的模型 |
 
 **合并方式**：提供商设置与基础模板深度合并。提供商的 `env` 优先于 `settings.env`。
 
+### Supervisor 配置
+
+| 字段 | 说明 | 默认值 |
+|------|------|--------|
+| `enabled` | 启用 Supervisor 模式 | `false` |
+| `max_iterations` | 强制停止前的最大迭代次数 | `20` |
+| `timeout_seconds` | 每次 supervisor 调用的超时时间 | `600` |
+
+可通过 `CCC_SUPERVISOR=1` 环境变量覆盖。
+
+### 自定义 Supervisor 提示词
+
+创建 `~/.claude/SUPERVISOR.md` 来自定义 Supervisor 提示词。默认提示词参见 `internal/cli/supervisor_prompt_default.md`。
+
 ### 自动迁移
 
-如果你已有 `~/.claude/settings.json`，`ccc` 可以在首次运行时自动迁移：
-
-```bash
-ccc
-
-# 提示："Would you like to create ccc config from existing settings? [y/N]"
-# 按 'y' 确认迁移
-```
-
-迁移行为：
-- `settings.json` 中的 `env` 字段 → `providers.default.env`
-- 其他字段 → `settings`（基础模板）
+如果你已有 `~/.claude/settings.json`，首次运行时 `ccc` 会提示迁移。
 
 ---
 
@@ -330,86 +329,6 @@ CCC_CONFIG_DIR=./tmp ccc kimi
 export CCC_SUPERVISOR=1
 ccc kimi
 ```
-
----
-
-## 高级用法
-
-### Supervisor 配置
-
-可以在 `~/.claude/ccc-supervisor.json` 中配置 Supervisor 行为（可选）：
-
-```json
-{
-  "enabled": true,
-  "max_iterations": 20,
-  "timeout_seconds": 600
-}
-```
-
-### 自定义 Supervisor 提示词
-
-创建 `~/.claude/SUPERVISOR.md` 来自定义 Supervisor 提示词。默认提示词参见 `internal/cli/supervisor_prompt_default.md`。
-
----
-
-## 验证
-
-本章节诚实地记录了已测试和未测试的内容。
-
-### ✅ 实际已测试（自动化）
-
-| 场景 | 方法 | 结果 |
-|------|------|------|
-| JSON 语法 | `python3 -m json.tool` | ✓ 配置示例是有效的 JSON |
-| 配置加载 | `ccc --help` | ✓ 配置正确解析和加载 |
-| Hook 生成 | 检查 `settings.json` | ✓ 设置 `CCC_SUPERVISOR=1` 时添加 hooks |
-| 无 Supervisor 时无 hooks | 检查 `settings.json` | ✓ 未设置 `CCC_SUPERVISOR` 时无 hooks |
-| GitHub 锚点链接（英文） | 浏览器点击测试 | ✓ 所有测试的锚点正常工作 |
-| GitHub 锚点链接（中文） | 浏览器点击测试 | ✓ 百分比编码锚点正常工作 |
-
-### ⚠️ 假设正确（基于格式）
-
-| 场景 | 状态 | 说明 |
-|------|------|------|
-| Markdown 渲染 | ⚠️ 假设正确 | 标准 Markdown；格式已验证 |
-
-### ❌ 未测试（需要真实环境）
-
-| 场景 | 状态 | 未测试原因 |
-|------|------|-----------|
-| 完整用户流程 | ❌ 未测试 | 需要真实用户按文档操作 |
-| Supervisor 实际运行 | ❌ 未测试 | 需要有效 API 凭证和 Agent 活动 |
-| Hook 执行反馈循环 | ❌ 未测试 | 需要实际的 Supervisor-Agent 交互 |
-| "5 分钟"快速上手声明 | ❌ 未测试 | 没有真实用户端到端尝试过 |
-
-### 用户测试
-
-**状态：❌ 尚无真实用户测试**
-
-本文档**尚未经过真实用户**按照快速开始指令进行验证。
-
-**帮助验证本文档：**
-1. 从头按照快速开始部分操作
-2. 报告遇到的任何问题或困惑
-3. 您的反馈将改进本文档
-
-**使用的测试命令（供参考）：**
-
-```bash
-# 测试 1: JSON 语法
-python3 -m json.tool test-config.json
-
-# 测试 2: 配置加载
-CCC_CONFIG_DIR=./tmp/test ./ccc --help
-
-# 测试 3: Hooks 正确生成
-export CCC_SUPERVISOR=1
-CCC_CONFIG_DIR=./tmp/test ./ccc kimi --help
-cat settings.json | grep -A 10 "hooks"
-```
-
-**重要说明**：以上测试验证技术正确性，**不验证**真实用户能否成功按照本文档操作。
 
 ---
 

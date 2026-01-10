@@ -33,41 +33,7 @@ Download the binary for your platform (`ccc-darwin-arm64`, `ccc-linux-amd64`, et
 
 ### 2. Configure
 
-Create `~/.claude/ccc.json`. Choose your mode:
-
-**Option A: Basic Mode** (`acceptEdits` - prompts for confirmation)
-
-```json
-{
-  "settings": {
-    "permissions": {
-      "allow": ["Edit", "MultiEdit", "Write", "WebFetch", "WebSearch"],
-      "defaultMode": "acceptEdits"
-    }
-  },
-  "current_provider": "kimi",
-  "providers": {
-    "kimi": {
-      "env": {
-        "ANTHROPIC_BASE_URL": "https://api.moonshot.cn/anthropic",
-        "ANTHROPIC_AUTH_TOKEN": "YOUR_API_KEY_HERE",
-        "ANTHROPIC_MODEL": "kimi-k2-thinking"
-      }
-    },
-    "glm": {
-      "env": {
-        "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
-        "ANTHROPIC_AUTH_TOKEN": "YOUR_API_KEY_HERE",
-        "ANTHROPIC_MODEL": "glm-4.7"
-      }
-    }
-  }
-}
-```
-
-**Option B: Supervisor Mode** (`bypassPermissions` - automatic review, see [below](#supervisor-mode-recommended) for details)
-
-> **Security Note**: `bypassPermissions` allows Claude Code to execute tools without confirmation. Only use this in trusted environments.
+Create `~/.claude/ccc.json`:
 
 ```json
 {
@@ -75,6 +41,11 @@ Create `~/.claude/ccc.json`. Choose your mode:
     "permissions": {
       "allow": ["Edit", "MultiEdit", "Write", "WebFetch", "WebSearch"],
       "defaultMode": "bypassPermissions"
+    },
+    "supervisor": {
+      "enabled": true,
+      "max_iterations": 20,
+      "timeout_seconds": 600
     }
   },
   "current_provider": "kimi",
@@ -97,7 +68,7 @@ Create `~/.claude/ccc.json`. Choose your mode:
 }
 ```
 
-> **Note**: `current_provider` is auto-managed by `ccc`. For complete configuration options including advanced settings, see the [Configuration](#configuration) section below.
+> **Note**: `current_provider` is auto-managed by `ccc`. For full configuration options, see [Configuration](#configuration).
 
 ### 3. Use
 
@@ -121,11 +92,7 @@ Supervisor Mode is the most valuable feature of `ccc`. It automatically reviews 
 
 ### Enable Supervisor Mode
 
-**If you haven't configured `ccc` yet**, follow [Quick Start → Option B: Supervisor Mode](#quick-start-5-minutes) to set up your `ccc.json` with the required `bypassPermissions` setting.
-
-**If you already have a basic configuration**, update your `ccc.json` to use `bypassPermissions` (see [Quick Start → Option B](#quick-start-5-minutes) for the complete config).
-
-Then enable and run:
+Set `supervisor.enabled: true` in your `ccc.json` (see Quick Start above), or use the environment variable:
 
 ```bash
 export CCC_SUPERVISOR=1
@@ -255,26 +222,31 @@ All arguments are passed through to Claude Code unchanged.
 Default: `~/.claude/ccc.json`
 Override with: `CCC_CONFIG_DIR` environment variable
 
-### Config Structure
+### Complete Config Example
 
 ```json
 {
   "settings": {
     "permissions": {
       "allow": ["Edit", "MultiEdit", "Write", "WebFetch", "WebSearch"],
-      "defaultMode": "acceptEdits"
+      "defaultMode": "bypassPermissions"
+    },
+    "supervisor": {
+      "enabled": true,
+      "max_iterations": 20,
+      "timeout_seconds": 600
     },
     "alwaysThinkingEnabled": true,
+    "enabledPlugins": {
+      "gopls-lsp@claude-plugins-official": true
+    },
     "env": {
       "API_TIMEOUT_MS": "300000",
       "DISABLE_TELEMETRY": "1",
-      "DISABLE_ERROR_REPORTING": "1",
-      "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
-      "DISABLE_BUG_COMMAND": "1",
-      "DISABLE_COST_WARNINGS": "1"
+      "DISABLE_ERROR_REPORTING": "1"
     }
   },
-  "claude_args": ["--verbose", "--debug"],
+  "claude_args": ["--verbose"],
   "current_provider": "kimi",
   "providers": {
     "kimi": {
@@ -284,34 +256,61 @@ Override with: `CCC_CONFIG_DIR` environment variable
         "ANTHROPIC_MODEL": "kimi-k2-thinking",
         "ANTHROPIC_SMALL_FAST_MODEL": "kimi-k2-0905-preview"
       }
+    },
+    "glm": {
+      "env": {
+        "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+        "ANTHROPIC_AUTH_TOKEN": "YOUR_API_KEY_HERE",
+        "ANTHROPIC_MODEL": "glm-4.7"
+      }
     }
   }
 }
 ```
 
+### Config Fields
+
 | Field | Description |
 |-------|-------------|
 | `settings` | Base template shared by all providers |
+| `settings.permissions` | Permission settings (allow list, default mode) |
+| `settings.supervisor` | Supervisor mode configuration |
+| `settings.env` | Environment variables shared by all providers |
+| `settings.*` | Any other Claude Code settings (plugins, thinking mode, etc.) |
 | `claude_args` | Fixed arguments to pass to Claude Code (optional) |
-| `current_provider` | Last used provider (auto-updated) |
-| `providers` | Provider-specific overrides |
+| `current_provider` | Last used provider (auto-managed by ccc) |
+| `providers.{name}` | Provider-specific configuration |
+
+### Provider Configuration
+
+Each provider only needs to specify the fields it wants to override. Common fields:
+
+| Field | Description |
+|-------|-------------|
+| `env.ANTHROPIC_BASE_URL` | API endpoint URL |
+| `env.ANTHROPIC_AUTH_TOKEN` | API key/token |
+| `env.ANTHROPIC_MODEL` | Main model to use |
+| `env.ANTHROPIC_SMALL_FAST_MODEL` | Fast model for quick tasks |
 
 **How merging works**: Provider settings are deep-merged with the base template. Provider `env` takes precedence over `settings.env`.
 
+### Supervisor Configuration
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `enabled` | Enable Supervisor mode | `false` |
+| `max_iterations` | Maximum iterations before forcing stop | `20` |
+| `timeout_seconds` | Timeout per supervisor call | `600` |
+
+Can be overridden with `CCC_SUPERVISOR=1` environment variable.
+
+### Custom Supervisor Prompt
+
+Create `~/.claude/SUPERVISOR.md` to customize the Supervisor prompt. See `internal/cli/supervisor_prompt_default.md` for the default prompt.
+
 ### Automatic Migration
 
-If you have an existing `~/.claude/settings.json`, `ccc` can automatically migrate it on first run:
-
-```bash
-ccc
-
-# Prompt: "Would you like to create ccc config from existing settings? [y/N]"
-# Press 'y' to migrate
-```
-
-Migration behavior:
-- `env` fields from `settings.json` → `providers.default.env`
-- Other fields → `settings` (base template)
+If you have an existing `~/.claude/settings.json`, `ccc` will prompt to migrate it on first run.
 
 ---
 
@@ -330,86 +329,6 @@ CCC_CONFIG_DIR=./tmp ccc kimi
 export CCC_SUPERVISOR=1
 ccc kimi
 ```
-
----
-
-## Advanced Usage
-
-### Supervisor Configuration
-
-You can configure Supervisor behavior in `~/.claude/ccc-supervisor.json` (optional):
-
-```json
-{
-  "enabled": true,
-  "max_iterations": 20,
-  "timeout_seconds": 600
-}
-```
-
-### Custom Supervisor Prompt
-
-Create `~/.claude/SUPERVISOR.md` to customize the Supervisor prompt. See `internal/cli/supervisor_prompt_default.md` for the default prompt.
-
----
-
-## Verification
-
-This section honestly documents what has been tested and what remains unverified.
-
-### ✅ Actually Tested (Automated)
-
-| Scenario | Method | Result |
-|----------|--------|--------|
-| JSON syntax | `python3 -m json.tool` | ✓ Config examples are valid JSON |
-| Config loading | `ccc --help` | ✓ Config parses and loads correctly |
-| Hook generation | Check `settings.json` | ✓ Hooks added when `CCC_SUPERVISOR=1` |
-| No hooks without Supervisor | Check `settings.json` | ✓ No hooks when `CCC_SUPERVISOR` not set |
-| GitHub anchor links (English) | Browser click test | ✓ All tested anchors work correctly |
-| GitHub anchor links (Chinese) | Browser click test | ✓ Percent-encoded anchors work correctly |
-
-### ⚠️ Assumed Correct (Format-Based)
-
-| Scenario | Status | Notes |
-|----------|--------|-------|
-| Markdown rendering | ⚠️ Assumed correct | Standard Markdown; format validated |
-
-### ❌ Not Tested (Requires Real Environment)
-
-| Scenario | Status | Why Not Tested |
-|----------|--------|----------------|
-| Complete user flow | ❌ Not tested | Requires real user following instructions |
-| Supervisor Mode in action | ❌ Not tested | Requires valid API credentials and Agent activity |
-| Hook execution feedback loop | ❌ Not tested | Requires actual Supervisor-Agent interaction |
-| "5 minute" Quick Start claim | ❌ Not tested | No real user has tried this end-to-end |
-
-### User Testing
-
-**Status: ❌ NOT YET TESTED BY REAL USERS**
-
-This documentation has NOT been validated by a real user following the Quick Start instructions.
-
-**To help verify this documentation:**
-1. Follow the Quick Start section from scratch
-2. Report any issues or confusion you encounter
-3. Your feedback will improve this documentation
-
-**Testing commands used (for reference):**
-
-```bash
-# Test 1: JSON syntax
-python3 -m json.tool test-config.json
-
-# Test 2: Config loads
-CCC_CONFIG_DIR=./tmp/test ./ccc --help
-
-# Test 3: Hooks generated correctly
-export CCC_SUPERVISOR=1
-CCC_CONFIG_DIR=./tmp/test ./ccc kimi --help
-cat settings.json | grep -A 10 "hooks"
-```
-
-**IMPORTANT**: The tests above verify technical correctness, NOT whether a real user can successfully follow this documentation.
 
 ---
 
