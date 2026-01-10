@@ -256,11 +256,24 @@ func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout
 		logger.StringField("resume", sessionID),
 	)
 
+	// Create interactive client
+	log.Debug("creating SDK client")
+	client, err := claude.NewClient(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SDK client: %w", err)
+	}
+	defer client.Close(ctx)
+
+	// Connect to Claude
+	log.Debug("connecting SDK client")
+	if err := client.Connect(ctx); err != nil {
+		return nil, fmt.Errorf("failed to connect SDK client: %w", err)
+	}
+
 	// Send supervisor prompt as USER message
 	log.Debug("sending supervisor review request as user message")
-	messages, err := claude.Query(ctx, prompt, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create SDK query: %w", err)
+	if err := client.Query(ctx, prompt); err != nil {
+		return nil, fmt.Errorf("failed to send query: %w", err)
 	}
 
 	// Process messages and get ResultMessage
@@ -268,7 +281,7 @@ func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout
 
 	var resultMessage *types.ResultMessage
 
-	for msg := range messages {
+	for msg := range client.ReceiveResponse(ctx) {
 		// Log raw message JSON for debugging
 		msgJSON, _ := json.Marshal(msg)
 		log.Debug("raw message", logger.StringField("json", string(msgJSON)))
