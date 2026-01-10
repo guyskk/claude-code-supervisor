@@ -9,6 +9,23 @@ import (
 	"time"
 )
 
+// getStateDirFunc is a function that returns the state directory.
+// This is a variable to allow testing to override it.
+var getStateDirFunc = getDefaultStateDir
+
+// getDefaultStateDir returns the default state directory.
+func getDefaultStateDir() (string, error) {
+	if configDir := os.Getenv("CCC_CONFIG_DIR"); configDir != "" {
+		return filepath.Join(configDir, "ccc"), nil
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	return filepath.Join(homeDir, ".claude", "ccc"), nil
+}
+
 // State represents the supervisor state for a session.
 type State struct {
 	SessionID string    `json:"session_id"`
@@ -23,15 +40,7 @@ const DefaultMaxIterations = 20
 
 // GetStateDir returns the directory for supervisor state files.
 func GetStateDir() (string, error) {
-	if configDir := os.Getenv("CCC_CONFIG_DIR"); configDir != "" {
-		return filepath.Join(configDir, "ccc"), nil
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
-	}
-	return filepath.Join(homeDir, ".claude", "ccc"), nil
+	return getStateDirFunc()
 }
 
 // GetStatePath returns the path to the state file for a given session.
@@ -141,4 +150,39 @@ func ShouldContinue(sessionID string, max int) (bool, int, error) {
 		return false, 0, err
 	}
 	return count < max, count, nil
+}
+
+// GetLogFilePath returns the path to the supervisor log file for a given supervisorID.
+func GetLogFilePath(supervisorID string) (string, error) {
+	stateDir, err := GetStateDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get state directory: %w", err)
+	}
+	return filepath.Join(stateDir, fmt.Sprintf("supervisor-%s.log", supervisorID)), nil
+}
+
+// OpenLogFile opens and returns the supervisor log file for a given supervisorID.
+// It creates the state directory if it doesn't exist.
+// The caller is responsible for closing the file.
+func OpenLogFile(supervisorID string) (*os.File, error) {
+	stateDir, err := GetStateDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get state directory: %w", err)
+	}
+
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create state directory: %w", err)
+	}
+
+	logFilePath, err := GetLogFilePath(supervisorID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get log file path: %w", err)
+	}
+
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open log file: %w", err)
+	}
+
+	return logFile, nil
 }

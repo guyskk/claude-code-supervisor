@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/guyskk/ccc/internal/config"
@@ -39,23 +40,25 @@ func runClaude(cfg *config.Config, providerName string, claudeArgs []string, sup
 		// Set environment variable for hook to use
 		os.Setenv("CCC_SUPERVISOR_ID", supervisorID)
 
-		// Show log file path with actual supervisor ID (BEFORE launching message)
-		stateDir, err := supervisor.GetStateDir()
+		// Open log file and write initial messages directly to file
+		// (not to stderr, since hook hasn't started yet)
+		logFile, err := supervisor.OpenLogFile(supervisorID)
 		if err != nil {
-			return fmt.Errorf("failed to get supervisor state dir: %w", err)
+			return fmt.Errorf("failed to open supervisor log file: %w", err)
 		}
-		logPath := fmt.Sprintf("%s/supervisor-%s.log", stateDir, supervisorID)
+		defer logFile.Close()
+
+		// Show log file path to user
+		logPath, err := supervisor.GetLogFilePath(supervisorID)
+		if err != nil {
+			return fmt.Errorf("failed to get log file path: %w", err)
+		}
 		fmt.Printf("Supervisor enabled: tail -f %s\n", logPath)
 
-		// Pre-create log directory and file so tail -f works immediately
-		if err := os.MkdirAll(stateDir, 0755); err == nil {
-			logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-			if err == nil {
-				fmt.Fprintf(logFile, "[SUPERVISOR] Hook enabled: %s\n", supervisorID)
-				fmt.Fprintf(logFile, "[SUPERVISOR] Waiting for Stop hook to trigger...\n\n")
-				logFile.Close()
-			}
-		}
+		// Write initial log messages directly to file (not stderr)
+		timestamp := time.Now().Format(time.RFC3339Nano)
+		fmt.Fprintf(logFile, "%s INFO Supervisor started supervisor_id=%s\n", timestamp, supervisorID)
+		fmt.Fprintf(logFile, "%s INFO Waiting for Stop hook to trigger\n", timestamp)
 	}
 
 	// switch provider
