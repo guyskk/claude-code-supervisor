@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 )
@@ -38,20 +37,8 @@ func NewSupervisorLogger(supervisorID string) *slog.Logger {
 		return slog.New(stderrHandler)
 	}
 
-	// Create log file for supervisor session
-	stateDir, err := GetStateDir()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to get state directory: %v\n", err)
-		return slog.New(stderrHandler)
-	}
-
-	if err := os.MkdirAll(stateDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create state directory: %v\n", err)
-		return slog.New(stderrHandler)
-	}
-
-	logFilePath := filepath.Join(stateDir, fmt.Sprintf("supervisor-%s.log", supervisorID))
-	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// Open log file for supervisor session
+	logFile, err := OpenLogFile(supervisorID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open supervisor log file: %v\n", err)
 		return slog.New(stderrHandler)

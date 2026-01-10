@@ -399,18 +399,10 @@ func TestE2E_SupervisorLogFormat(t *testing.T) {
 
 	outputStr := string(output)
 
-	// Verify stderr contains supervisor messages with correct format
-	// Format: 2026-01-10T16:20:55.995859698+08:00 INFO message
-	expectedPatterns := []string{
-		"Supervisor enabled: tail -f",
-		"INFO Supervisor started supervisor_id=",
-		"INFO Waiting for Stop hook to trigger",
-	}
-
-	for _, pattern := range expectedPatterns {
-		if !strings.Contains(outputStr, pattern) {
-			t.Errorf("expected output to contain %q, got: %s", pattern, outputStr)
-		}
+	// Verify stdout contains supervisor enabled message
+	// (but NOT the log messages, which only go to file)
+	if !strings.Contains(outputStr, "Supervisor enabled: tail -f") {
+		t.Errorf("expected output to contain 'Supervisor enabled: tail -f', got: %s", outputStr)
 	}
 
 	// Verify log file exists and has correct format
@@ -440,6 +432,9 @@ func TestE2E_SupervisorLogFormat(t *testing.T) {
 	// Example: 2026-01-10T16:20:55.995859698+08:00 INFO Supervisor started
 	if !strings.Contains(logContentStr, "INFO Supervisor started") {
 		t.Errorf("expected log to contain 'INFO Supervisor started', got: %s", logContentStr)
+	}
+	if !strings.Contains(logContentStr, "INFO Waiting for Stop hook to trigger") {
+		t.Errorf("expected log to contain 'INFO Waiting for Stop hook to trigger', got: %s", logContentStr)
 	}
 }
 
