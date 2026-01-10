@@ -10,10 +10,10 @@ import (
 
 // HookOutput represents the output to stdout.
 // Reason is always set (provides context for the decision).
-// Decision is "block" when not allowing stop, null when allowing stop.
+// Decision is "block" when not allowing stop, omitted when allowing stop.
 type HookOutput struct {
-	Decision *string `json:"decision"` // "block" or null (allows stop)
-	Reason   string  `json:"reason"`   // Always set
+	Decision *string `json:"decision,omitempty"` // "block" or omitted (allows stop)
+	Reason   string  `json:"reason"`             // Always set
 }
 
 // OutputDecision outputs the supervisor's decision.

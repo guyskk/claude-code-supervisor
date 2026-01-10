@@ -656,8 +656,8 @@ func TestE2E_HookSubcommand(t *testing.T) {
 		t.Errorf("failed to send input: %v", err)
 	}
 
-	// Should see the bypass output (decision is null, reason is set)
-	if _, err := console.ExpectString(`{"decision":null,"reason":"not in supervisor mode or called from supervisor hook"}`); err != nil {
+	// Should see the bypass output (decision is omitted, reason is set)
+	if _, err := console.ExpectString(`{"reason":"not in supervisor mode or called from supervisor hook"}`); err != nil {
 		t.Errorf("expected bypass output: %v", err)
 	}
 

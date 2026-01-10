@@ -196,13 +196,13 @@ func TestOutputDecision_JSONFormat(t *testing.T) {
 			name:      "allow stop - empty feedback",
 			allowStop: true,
 			feedback:  "",
-			wantJSON:  `{"decision":null,"reason":""}` + "\n",
+			wantJSON:  `{"reason":""}` + "\n",
 		},
 		{
 			name:      "allow stop - with feedback",
 			allowStop: true,
 			feedback:  "some feedback",
-			wantJSON:  `{"decision":null,"reason":"some feedback"}` + "\n",
+			wantJSON:  `{"reason":"some feedback"}` + "\n",
 		},
 		{
 			name:       "block stop - with feedback",
@@ -272,9 +272,9 @@ func TestOutputDecision_JSONFormat(t *testing.T) {
 
 			// Verify decision field
 			if tt.allowStop {
-				// When allowStop=true, decision should be null
-				if decision, exists := parsed["decision"]; !exists || decision != nil {
-					t.Errorf("decision should be null, got %v", decision)
+				// When allowStop=true, decision field should be omitted (not present)
+				if _, exists := parsed["decision"]; exists {
+					t.Errorf("decision should be omitted when allowStop=true, got %v", parsed["decision"])
 				}
 			} else {
 				if decision, exists := parsed["decision"]; !exists || decision != "block" {
