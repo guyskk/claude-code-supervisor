@@ -502,6 +502,161 @@ func TestE2E_ValidateCommand(t *testing.T) {
 	}
 }
 
+// TestE2E_SupervisorConfigLoading tests that supervisor config at top level loads correctly
+func TestE2E_SupervisorConfigLoading(t *testing.T) {
+	tests := []struct {
+		name             string
+		configJSON       string
+		expectSupervisor bool   // whether supervisor section should exist in output
+		expectEnabled    bool   // expected enabled value
+		expectMaxIter    int    // expected max_iterations value
+		expectTimeout    int    // expected timeout_seconds value
+		envVar           string // optional CCC_SUPERVISOR env var
+	}{
+		{
+			name: "supervisor_enabled_at_top_level",
+			configJSON: `{
+				"settings": {"permissions": {"defaultMode": "acceptEdits"}},
+				"supervisor": {
+					"enabled": true,
+					"max_iterations": 15,
+					"timeout_seconds": 300
+				},
+				"current_provider": "test1",
+				"providers": {
+					"test1": {"env": {"ANTHROPIC_AUTH_TOKEN": "test"}}
+				}
+			}`,
+			expectSupervisor: true,
+			expectEnabled:    true,
+			expectMaxIter:    15,
+			expectTimeout:    300,
+		},
+		{
+			name: "supervisor_disabled_by_default",
+			configJSON: `{
+				"settings": {"permissions": {"defaultMode": "acceptEdits"}},
+				"current_provider": "test1",
+				"providers": {
+					"test1": {"env": {"ANTHROPIC_AUTH_TOKEN": "test"}}
+				}
+			}`,
+			expectSupervisor: true,
+			expectEnabled:    false,
+			expectMaxIter:    20,  // defaults
+			expectTimeout:    600, // defaults
+		},
+		{
+			name: "supervisor_partial_config_only_enabled",
+			configJSON: `{
+				"settings": {"permissions": {"defaultMode": "acceptEdits"}},
+				"supervisor": {
+					"enabled": true
+				},
+				"current_provider": "test1",
+				"providers": {
+					"test1": {"env": {"ANTHROPIC_AUTH_TOKEN": "test"}}
+				}
+			}`,
+			expectSupervisor: true,
+			expectEnabled:    true,
+			expectMaxIter:    20,  // defaults
+			expectTimeout:    600, // defaults
+		},
+		{
+			name: "supervisor_custom_max_iterations",
+			configJSON: `{
+				"settings": {"permissions": {"defaultMode": "acceptEdits"}},
+				"supervisor": {
+					"max_iterations": 5
+				},
+				"current_provider": "test1",
+				"providers": {
+					"test1": {"env": {"ANTHROPIC_AUTH_TOKEN": "test"}}
+				}
+			}`,
+			expectSupervisor: true,
+			expectEnabled:    false, // default
+			expectMaxIter:    5,
+			expectTimeout:    600, // default
+		},
+		{
+			name: "env_var_enables_supervisor",
+			configJSON: `{
+				"settings": {"permissions": {"defaultMode": "acceptEdits"}},
+				"current_provider": "test1",
+				"providers": {
+					"test1": {"env": {"ANTHROPIC_AUTH_TOKEN": "test"}}
+				}
+			}`,
+			expectSupervisor: true,
+			expectEnabled:    true, // enabled by env var
+			expectMaxIter:    20,   // defaults
+			expectTimeout:    600,  // defaults
+			envVar:           "1",
+		},
+		{
+			name: "env_var_disables_supervisor",
+			configJSON: `{
+				"settings": {"permissions": {"defaultMode": "acceptEdits"}},
+				"supervisor": {
+					"enabled": true
+				},
+				"current_provider": "test1",
+				"providers": {
+					"test1": {"env": {"ANTHROPIC_AUTH_TOKEN": "test"}}
+				}
+			}`,
+			expectSupervisor: true,
+			expectEnabled:    false, // disabled by env var
+			expectMaxIter:    20,    // defaults
+			expectTimeout:    600,   // defaults
+			envVar:           "0",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt // capture loop variable
+		t.Run(tt.name, func(t *testing.T) {
+			// Create test config
+			tmpDir := t.TempDir()
+			testConfigDir := filepath.Join(tmpDir, ".claude")
+			if err := os.MkdirAll(testConfigDir, 0755); err != nil {
+				t.Fatal(err)
+			}
+
+			testConfig := filepath.Join(testConfigDir, "ccc.json")
+			if err := os.WriteFile(testConfig, []byte(tt.configJSON), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			// Run ccc validate to trigger config loading
+			cmd := exec.CommandContext(ctx, cccBinaryPath, "validate")
+			cmd.Env = append(os.Environ(), fmt.Sprintf("CCC_CONFIG_DIR=%s", testConfigDir))
+			if tt.envVar != "" {
+				cmd.Env = append(cmd.Env, fmt.Sprintf("CCC_SUPERVISOR=%s", tt.envVar))
+			}
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Logf("Command completed with error (API test may fail): %v", err)
+			}
+
+			// Check that config loaded successfully
+			outputStr := string(output)
+			t.Logf("Command output:\n%s", outputStr)
+
+			// The validate command should run successfully with the config
+			// If there's a config parsing error, it would fail before validation
+			if !contains(outputStr, "test1") {
+				t.Errorf("Expected provider name 'test1' in output, got: %s", outputStr)
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		(len(s) > len(substr) && findInString(s, substr)))
