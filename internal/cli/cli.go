@@ -109,7 +109,7 @@ func ShowHelp(cfg *config.Config, cfgErr error) {
 	help := `Usage: ccc [provider] [args...]
        ccc validate [provider] [--all]
 
-Claude Code Supervisor - Auto-review until quality work is delivered
+Claude Code Supervisor and Configuration Switcher
 
 Commands:
   ccc              Use the current provider (or the first provider if none is set)

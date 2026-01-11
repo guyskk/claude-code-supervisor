@@ -22,10 +22,10 @@
 #### 选项 A：一键安装（Linux / macOS）
 
 ```bash
-OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/'); curl -LO "https://github.com/guyskk/claude-code-config-switcher/releases/latest/download/ccc-${OS}-${ARCH}" && sudo install -m 755 "ccc-${OS}-${ARCH}" /usr/local/bin/ccc && rm "ccc-${OS}-${ARCH}" && ccc --version
+OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/'); curl -LO "https://github.com/guyskk/claude-code-supervisor/releases/latest/download/ccc-${OS}-${ARCH}" && sudo install -m 755 "ccc-${OS}-${ARCH}" /usr/local/bin/ccc && rm "ccc-${OS}-${ARCH}" && ccc --version
 ```
 
-#### 选项 B：从 [Releases](https://github.com/guyskk/claude-code-config-switcher/releases) 下载
+#### 选项 B：从 [Releases](https://github.com/guyskk/claude-code-supervisor/releases) 下载
 
 下载适合你平台的二进制文件（`ccc-darwin-arm64`、`ccc-linux-amd64` 等）并安装到 `/usr/local/bin/`。
 

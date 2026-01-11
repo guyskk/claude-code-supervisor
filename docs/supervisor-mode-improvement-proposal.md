@@ -940,7 +940,7 @@ setup_tmux_monitor() {
 
 - Ralph 项目：https://github.com/anthropics/ralph-claude-code
 - Claude Code Hooks 文档：https://docs.anthropic.com/en/docs/build-with-claude/claude-for-developers
-- 当前项目：https://github.com/guyskk/claude-code-config-switcher
+- 当前项目：https://github.com/guyskk/claude-code-supervisor
 
 ---
 
