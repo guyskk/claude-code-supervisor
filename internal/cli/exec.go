@@ -35,10 +35,14 @@ func runClaude(cfg *config.Config, providerName string, claudeArgs []string, sup
 
 	// Generate settings for supervisor mode
 	if supervisorMode {
-		// Generate supervisor ID for this session
-		supervisorID = uuid.New().String()
-		// Set environment variable for hook to use
-		os.Setenv("CCC_SUPERVISOR_ID", supervisorID)
+		// Check if supervisor ID is already set in environment
+		// (e.g., from previous supervisor iteration)
+		supervisorID = os.Getenv("CCC_SUPERVISOR_ID")
+		if supervisorID == "" {
+			// Generate new supervisor ID for this session
+			supervisorID = uuid.New().String()
+			os.Setenv("CCC_SUPERVISOR_ID", supervisorID)
+		}
 
 		// Open log file and write initial messages directly to file
 		// (not to stderr, since hook hasn't started yet)
