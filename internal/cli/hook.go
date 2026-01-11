@@ -133,7 +133,8 @@ func RunSupervisorHook(args []string) error {
 	// Step 11: Get default supervisor prompt (hardcoded)
 	supervisorPrompt := getDefaultSupervisorPrompt()
 	log.Debug("supervisor prompt loaded",
-		"prompt_length", len(supervisorPrompt),
+		"length", len(supervisorPrompt),
+		"prompt", supervisorPrompt,
 	)
 
 	// Step 12: Inform user about supervisor review
