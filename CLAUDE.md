@@ -54,3 +54,21 @@ Provide:
 -  Clear interfaces and struct composition patterns
 -  go.mod setup with minimal, well-justified dependencies
 -  Performance profiling setup and optimization recommendations
+
+## 提交前检查
+
+```bash
+Usage: ./check.sh [OPTIONS]
+
+Options:
+  -l, --lint          Run lint checks (gofmt, go vet, shellcheck, markdownlint)
+  -t, --test          Run tests with race detector
+  -b, --build         Run build validation
+  -h, --help          Show this help message
+
+If no options specified, runs all checks (lint, test, build).
+
+Examples:
+  ./check.sh                          # Run all checks
+  ./check.sh --lint                   # Run lint only
+```

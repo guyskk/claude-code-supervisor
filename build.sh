@@ -48,8 +48,10 @@ print_help() {
 
 # Detect current platform
 detect_current_platform() {
-    local os=$(go env GOOS)
-    local arch=$(go env GOARCH)
+    local os
+    local arch
+    os=$(go env GOOS)
+    arch=$(go env GOARCH)
     echo "${os}-${arch}"
 }
 

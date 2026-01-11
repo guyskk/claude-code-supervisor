@@ -17,28 +17,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run gofmt
-        run: |
-          gofmt -l .
-          test -z "$(gofmt -l .)" || exit 1
-
-      - name: Run go vet
-        run: go vet ./...
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Build all platforms
-        run: ./build.sh --all
+      - name: Run lint checks
+        run: ./check.sh --lint
 
   test:
     name: Test
@@ -51,4 +31,17 @@ jobs:
           cache: true
 
       - name: Run tests
-        run: go test -v -race -tags=ci ./...
+        run: ./check.sh --test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build all platforms
+        run: ./check.sh --build
