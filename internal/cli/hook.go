@@ -131,9 +131,10 @@ func RunSupervisorHook(args []string) error {
 	}
 
 	// Step 11: Get default supervisor prompt (hardcoded)
-	supervisorPrompt := getDefaultSupervisorPrompt()
+	supervisorPrompt, promptSource := getDefaultSupervisorPrompt()
 	log.Debug("supervisor prompt loaded",
-		"prompt_length", len(supervisorPrompt),
+		"source", promptSource,
+		"length", len(supervisorPrompt),
 	)
 
 	// Step 12: Inform user about supervisor review
@@ -318,8 +319,20 @@ func parseResultJSON(jsonText string) *SupervisorResult {
 	return result
 }
 
-// getDefaultSupervisorPrompt returns the default supervisor prompt.
-// The prompt content is embedded from supervisor_prompt_default.md at compile time.
-func getDefaultSupervisorPrompt() string {
-	return string(defaultPromptContent)
+// getDefaultSupervisorPrompt returns the supervisor prompt and its source.
+// It first tries to read from ~/.claude/SUPERVISOR.md (or CCC_CONFIG_DIR/SUPERVISOR.md).
+// If the custom file exists and has content, it is used; otherwise, the default embedded prompt is returned.
+// The source return value indicates where the prompt came from:
+// - "supervisor_prompt_default" for the embedded default prompt
+// - Full file path for a custom SUPERVISOR.md file
+func getDefaultSupervisorPrompt() (string, string) {
+	customPromptPath := config.GetDir() + "/SUPERVISOR.md"
+	data, err := os.ReadFile(customPromptPath)
+	if err == nil {
+		prompt := strings.TrimSpace(string(data))
+		if prompt != "" {
+			return prompt, customPromptPath
+		}
+	}
+	return string(defaultPromptContent), "supervisor_prompt_default"
 }

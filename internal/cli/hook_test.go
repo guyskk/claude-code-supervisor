@@ -1,8 +1,12 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/guyskk/ccc/internal/config"
 )
 
 func TestParseResultJSON(t *testing.T) {
@@ -106,29 +110,96 @@ func TestParseResultJSON(t *testing.T) {
 }
 
 func TestGetDefaultSupervisorPrompt(t *testing.T) {
-	prompt := getDefaultSupervisorPrompt()
-	if prompt == "" {
-		t.Error("getDefaultSupervisorPrompt() returned empty string")
-	}
-	// Check that key parts are present (prompt is in Chinese)
-	// The prompt uses "审查者" (reviewer) instead of "Supervisor"
-	if !strings.Contains(prompt, "审查者") && !strings.Contains(prompt, "Supervisor") {
-		t.Error("getDefaultSupervisorPrompt() missing '审查者' or 'Supervisor'")
-	}
-	if !strings.Contains(prompt, "allow_stop") {
-		t.Error("getDefaultSupervisorPrompt() missing 'allow_stop'")
-	}
-	if !strings.Contains(prompt, "feedback") {
-		t.Error("getDefaultSupervisorPrompt() missing 'feedback'")
-	}
-	// Check that the prompt mentions JSON output format
-	if !strings.Contains(prompt, "JSON") && !strings.Contains(prompt, "json") {
-		t.Error("getDefaultSupervisorPrompt() should mention JSON format")
-	}
-	// Check for key sections in the Chinese prompt
-	if !strings.Contains(prompt, "暂停当前") && !strings.Contains(prompt, "审查框架") {
-		t.Error("getDefaultSupervisorPrompt() should contain key sections")
-	}
+	// Save original GetDirFunc to restore after test
+	originalGetDirFunc := config.GetDirFunc
+	defer func() { config.GetDirFunc = originalGetDirFunc }()
+
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+	config.GetDirFunc = func() string { return tempDir }
+
+	t.Run("default prompt when no custom file", func(t *testing.T) {
+		prompt, source := getDefaultSupervisorPrompt()
+		if prompt == "" {
+			t.Error("getDefaultSupervisorPrompt() returned empty string")
+		}
+		if source != "supervisor_prompt_default" {
+			t.Errorf("getDefaultSupervisorPrompt() source = %q, want %q", source, "supervisor_prompt_default")
+		}
+		// Check that key parts are present (prompt is in Chinese)
+		// The prompt uses "审查者" (reviewer) instead of "Supervisor"
+		if !strings.Contains(prompt, "审查者") && !strings.Contains(prompt, "Supervisor") {
+			t.Error("getDefaultSupervisorPrompt() missing '审查者' or 'Supervisor'")
+		}
+		if !strings.Contains(prompt, "allow_stop") {
+			t.Error("getDefaultSupervisorPrompt() missing 'allow_stop'")
+		}
+		if !strings.Contains(prompt, "feedback") {
+			t.Error("getDefaultSupervisorPrompt() missing 'feedback'")
+		}
+		// Check that the prompt mentions JSON output format
+		if !strings.Contains(prompt, "JSON") && !strings.Contains(prompt, "json") {
+			t.Error("getDefaultSupervisorPrompt() should mention JSON format")
+		}
+		// Check for key sections in the Chinese prompt
+		if !strings.Contains(prompt, "暂停当前") && !strings.Contains(prompt, "审查框架") {
+			t.Error("getDefaultSupervisorPrompt() should contain key sections")
+		}
+	})
+
+	t.Run("custom prompt from SUPERVISOR.md", func(t *testing.T) {
+		customPrompt := "Custom supervisor prompt for testing"
+		customPath := filepath.Join(tempDir, "SUPERVISOR.md")
+		if err := os.WriteFile(customPath, []byte(customPrompt), 0644); err != nil {
+			t.Fatalf("failed to write custom prompt file: %v", err)
+		}
+
+		prompt, source := getDefaultSupervisorPrompt()
+		if prompt != customPrompt {
+			t.Errorf("getDefaultSupervisorPrompt() = %q, want %q", prompt, customPrompt)
+		}
+		if source != customPath {
+			t.Errorf("getDefaultSupervisorPrompt() source = %q, want %q", source, customPath)
+		}
+	})
+
+	t.Run("empty custom file falls back to default", func(t *testing.T) {
+		customPath := filepath.Join(tempDir, "SUPERVISOR.md")
+		if err := os.WriteFile(customPath, []byte("   \n\t  "), 0644); err != nil {
+			t.Fatalf("failed to write empty custom prompt file: %v", err)
+		}
+
+		prompt, source := getDefaultSupervisorPrompt()
+		if prompt == "" {
+			t.Error("getDefaultSupervisorPrompt() returned empty string for empty custom file")
+		}
+		if source != "supervisor_prompt_default" {
+			t.Errorf("getDefaultSupervisorPrompt() source = %q, want %q", source, "supervisor_prompt_default")
+		}
+		// Should use default prompt (contains Chinese keywords)
+		if !strings.Contains(prompt, "审查者") && !strings.Contains(prompt, "Supervisor") {
+			t.Error("getDefaultSupervisorPrompt() should use default prompt when custom file is empty")
+		}
+	})
+
+	t.Run("custom file with only whitespace falls back to default", func(t *testing.T) {
+		customPath := filepath.Join(tempDir, "SUPERVISOR.md")
+		if err := os.WriteFile(customPath, []byte("\n\n"), 0644); err != nil {
+			t.Fatalf("failed to write whitespace-only custom prompt file: %v", err)
+		}
+
+		prompt, source := getDefaultSupervisorPrompt()
+		if prompt == "" {
+			t.Error("getDefaultSupervisorPrompt() returned empty string for whitespace-only custom file")
+		}
+		if source != "supervisor_prompt_default" {
+			t.Errorf("getDefaultSupervisorPrompt() source = %q, want %q", source, "supervisor_prompt_default")
+		}
+		// Should use default prompt
+		if !strings.Contains(prompt, "审查者") && !strings.Contains(prompt, "Supervisor") {
+			t.Error("getDefaultSupervisorPrompt() should use default prompt when custom file is whitespace-only")
+		}
+	})
 }
 
 func TestSupervisorResultSchema(t *testing.T) {
