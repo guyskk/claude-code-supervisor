@@ -296,7 +296,7 @@ func TestRun(t *testing.T) {
 }
 
 func TestConstants(t *testing.T) {
-	if Name != "claude-code-config-switcher" {
-		t.Errorf("Name = %s, want claude-code-config-switcher", Name)
+	if Name != "claude-code-supervisor" {
+		t.Errorf("Name = %s, want claude-code-supervisor", Name)
 	}
 }

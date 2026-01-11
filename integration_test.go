@@ -94,7 +94,7 @@ func TestIntegrationBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Version command failed: %v", err)
 	}
-	if !strings.Contains(string(versionOutput), "claude-code-config-switcher version") {
+	if !strings.Contains(string(versionOutput), "claude-code-supervisor version") {
 		t.Errorf("Version output unexpected: %s", versionOutput)
 	}
 }

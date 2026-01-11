@@ -196,7 +196,7 @@ func TestE2E_Version(t *testing.T) {
 	}
 
 	// Check for version output while process is still running
-	if _, err := console.ExpectString("claude-code-config-switcher version"); err != nil {
+	if _, err := console.ExpectString("claude-code-supervisor version"); err != nil {
 		t.Errorf("expected version string: %v", err)
 	}
 
@@ -915,7 +915,7 @@ func TestE2E_Timeout(t *testing.T) {
 	}
 
 	// Check we got the expected output while process is running
-	if _, err := console.ExpectString("claude-code-config-switcher version"); err != nil {
+	if _, err := console.ExpectString("claude-code-supervisor version"); err != nil {
 		t.Errorf("expected version string: %v", err)
 	}
 

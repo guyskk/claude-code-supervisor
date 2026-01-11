@@ -43,12 +43,12 @@
 #### Scenario: 显示开发版本
 - **GIVEN** 版本未设置（开发构建）
 - **WHEN** 用户请求版本信息
-- **THEN** 应当显示 "claude-code-config-switcher version dev (built at unknown)"
+- **THEN** 应当显示 "claude-code-supervisor version dev (built at unknown)"
 
 #### Scenario: 显示发布版本
 - **GIVEN** 版本为 "v0.1.2"，构建时间为 "2024-01-15T10:30:00Z"
 - **WHEN** 用户请求版本信息
-- **THEN** 应当显示 "claude-code-config-switcher version v0.1.2 (built at 2024-01-15T10:30:00Z)"
+- **THEN** 应当显示 "claude-code-supervisor version v0.1.2 (built at 2024-01-15T10:30:00Z)"
 
 ### Requirement: Supervisor Mode 命令行
 

@@ -13,7 +13,7 @@ import (
 )
 
 // Name is the project name.
-const Name = "claude-code-config-switcher"
+const Name = "claude-code-supervisor"
 
 // Version is set by build flags during release.
 var Version = "dev"

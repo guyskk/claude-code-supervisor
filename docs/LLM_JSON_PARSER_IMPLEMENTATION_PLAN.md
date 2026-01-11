@@ -999,7 +999,7 @@ func TestTableDrivenParsing(t *testing.T) {
 ## 七、文件结构
 
 ```
-/home/ubuntu/dev/claude-code-config-switcher1/
+/home/ubuntu/dev/claude-code-supervisor1/
 ├── internal/
 │   └── llmparser/
 │       ├── parser.go       # 核心实现
@@ -1028,7 +1028,7 @@ go get github.com/stretchr/testify@latest  # 测试断言库
 ### 8.2 最终 go.mod 依赖
 
 ```go
-module github.com/guyskk/claude-code-config-switcher
+module github.com/guyskk/claude-code-supervisor
 
 go 1.21
 
