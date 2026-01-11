@@ -1,5 +1,6 @@
-// ccc - Claude Code Configuration Switcher
-// A CLI tool to switch between multiple Claude Code API provider configurations.
+// ccc - Claude Code Supervisor
+// Auto-review and iterate until quality work is delivered.
+// Switch between multiple Claude Code providers with one command.
 package main
 
 import (

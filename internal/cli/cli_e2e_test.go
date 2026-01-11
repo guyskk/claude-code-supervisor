@@ -152,7 +152,7 @@ func TestE2E_Help(t *testing.T) {
 	if _, err := console.ExpectString("Usage: ccc [provider] [args...]"); err != nil {
 		t.Errorf("expected usage string: %v", err)
 	}
-	if _, err := console.ExpectString("Claude Code Configuration Switcher"); err != nil {
+	if _, err := console.ExpectString("Claude Code Supervisor"); err != nil {
 		t.Errorf("expected title: %v", err)
 	}
 	if _, err := console.ExpectString("Commands:"); err != nil {

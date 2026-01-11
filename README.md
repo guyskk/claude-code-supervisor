@@ -1,8 +1,8 @@
-# Claude Code Config Switcher
+# ccc - Claude Code Supervisor
 
 [阅读中文文档](README-CN.md)
 
-**Switch between multiple Claude Code providers (Kimi, GLM, MiniMax, etc.) with a single command.**
+**Auto-review and iterate until quality work is delivered. Switch between multiple Claude Code providers with one command.**
 
 ---
 
@@ -10,10 +10,10 @@
 
 `ccc` is a CLI tool that enhances Claude Code with two killer features:
 
-1. **Seamless Provider Switching** - Switch between Kimi, GLM, MiniMax, and other providers with one command
-2. **Supervisor Mode** - Automatic task review and iteration that ensures high-quality, deliverable work
+1. **Supervisor Mode** ⭐ - Automatic task review that ensures high-quality, deliverable work (most valuable)
+2. **Seamless Provider Switching** - Switch between Kimi, GLM, MiniMax, and other providers with one command
 
-Unlike `ralph-claude-code`, Supervisor Mode uses a strict six-step review framework that catches common issues like "asking without doing", "planning without executing", and "missing integration tests".
+**Better than `ralph-claude-code`**: Supervisor Mode uses a stop-hook triggered review with a strict six-step framework that significantly improves task completion and quality. Unlike `ralph`'s signal-based exit detection (counting "done" signals or test loops), ccc's Supervisor forks the full session context and evaluates actual work quality—requiring self-review, integration tests, and deployment-ready code. This prevents fake completions where AI claims "done" but the result has poor quality or unresolved issues.
 
 ---
 
@@ -97,6 +97,14 @@ ccc validate
 # Validate all providers
 ccc validate --all
 ```
+
+---
+
+## 💡 Pro Tip: Enable Supervisor Mode
+
+Supervisor Mode is the **most valuable feature** of ccc. Once you've completed the Quick Start, enable it by setting `supervisor.enabled: true` in your `ccc.json` config.
+
+See [Supervisor Mode](#supervisor-mode-recommended) below for details.
 
 ---
 
