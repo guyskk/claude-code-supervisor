@@ -1,8 +1,8 @@
-# Claude Code 配置切换器
+# ccc - Claude Code 监督器
 
 [English](README.md)
 
-**一条命令在多个 Claude Code 提供商（Kimi、GLM、MiniMax 等）之间切换。**
+**自动审查和迭代直到高质量工作交付。一条命令在多个 Claude Code 提供商之间切换。**
 
 ---
 
@@ -10,8 +10,8 @@
 
 `ccc` 是一个增强 Claude Code 的命令行工具，提供两大核心功能：
 
-1. **无缝提供商切换** - 一条命令在 Kimi、GLM、MiniMax 等提供商之间切换
-2. **Supervisor 模式** - 自动任务审查和迭代，确保高质量、可交付的成果
+1. **Supervisor 模式** ⭐ - 自动任务审查，确保高质量、可交付的成果（最有价值）
+2. **无缝提供商切换** - 一条命令在 Kimi、GLM、MiniMax 等提供商之间切换
 
 与 `ralph-claude-code` 不同，Supervisor 模式使用严格的六步审查框架，能发现"只问不做"、"只计划不执行"、"缺少集成测试"等常见问题。
 
@@ -97,6 +97,14 @@ ccc validate
 # 验证所有提供商
 ccc validate --all
 ```
+
+---
+
+## 💡 专业提示：启用 Supervisor 模式
+
+Supervisor 模式是 `ccc` **最有价值的特性**。完成快速开始后，在 `ccc.json` 配置中设置 `supervisor.enabled: true` 即可启用。
+
+详见下方的 [Supervisor 模式](#supervisor-模式推荐)。
 
 ---
 
