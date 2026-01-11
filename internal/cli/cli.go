@@ -238,16 +238,9 @@ func Run(cmd *Command) error {
 	if err != nil {
 		return fmt.Errorf("failed to load supervisor config: %w", err)
 	}
-	supervisorEnabled := supervisorCfg.Enabled
-	switch os.Getenv("CCC_SUPERVISOR") {
-	case "1":
-		supervisorEnabled = true
-	case "0":
-		supervisorEnabled = false
-	}
 
 	// Run claude with the provider (handles both normal and supervisor mode)
-	return runClaude(cfg, providerName, cmd.ClaudeArgs, supervisorEnabled)
+	return runClaude(cfg, providerName, cmd.ClaudeArgs, supervisorCfg.Enabled)
 }
 
 // runValidate executes the validate command.
