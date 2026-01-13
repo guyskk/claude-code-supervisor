@@ -178,13 +178,13 @@ func (h *friendlyTextHandler) Handle(ctx context.Context, r slog.Record) error {
 	// Write pre-set attributes first
 	if h.attrs != nil {
 		for _, a := range h.attrs {
-			fmt.Fprintf(h.writer, " %s=%s", a.Key, a.Value)
+			fmt.Fprintf(h.writer, " %s=%v", a.Key, a.Value.Any())
 		}
 	}
 
 	// Write record attributes
 	r.Attrs(func(a slog.Attr) bool {
-		fmt.Fprintf(h.writer, " %s=%s", a.Key, a.Value)
+		fmt.Fprintf(h.writer, " %s=%v", a.Key, a.Value.Any())
 		return true
 	})
 

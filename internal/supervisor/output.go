@@ -45,15 +45,15 @@ func OutputDecision(log *slog.Logger, allowStop bool, feedback string) error {
 		return fmt.Errorf("failed to marshal hook output: %w", err)
 	}
 
-	// Output JSON to stdout (for Claude Code to parse)
-	fmt.Println(string(outputJSON))
-
 	// Log the decision
 	if allowStop {
 		log.Info("supervisor output: allow stop", "feedback", feedback)
 	} else {
 		log.Info("supervisor output: not allow stop", "feedback", output.Reason)
 	}
+
+	// Output JSON to stdout (for Claude Code to parse)
+	fmt.Println(string(outputJSON))
 
 	return nil
 }
