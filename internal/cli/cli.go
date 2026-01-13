@@ -43,48 +43,30 @@ type ValidateCommand struct {
 }
 
 // Parse parses command-line arguments.
-// Only recognizes --help, --version, and the first argument as provider name.
-// All other arguments are passed through to Claude.
 func Parse(args []string) *Command {
 	cmd := &Command{}
-
-	// Check for supervisor-hook subcommand first
-	if len(args) > 0 && args[0] == "supervisor-hook" {
+	// 根据第一个参数判断是否是ccc的参数，其余参数透传给claude
+	firstArg := ""
+	if len(args) > 0 {
+		firstArg = args[0]
+	}
+	if firstArg == "--version" {
+		cmd.Version = true
+	} else if firstArg == "--help" {
+		cmd.Help = true
+	} else if firstArg == "validate" {
+		cmd.Validate = true
+		cmd.ValidateOpts = parseValidateArgs(args[1:])
+	} else if firstArg == "supervisor-hook" {
 		cmd.HookSubcommand = true
-		return cmd
+	} else if !strings.HasPrefix(firstArg, "-") {
+		cmd.Provider = firstArg
+		if len(args) > 1 {
+			cmd.ClaudeArgs = args[1:]
+		}
+	} else {
+		cmd.ClaudeArgs = args
 	}
-
-	for i, arg := range args {
-		if arg == "--version" || arg == "-v" {
-			cmd.Version = true
-			return cmd
-		}
-		if arg == "--help" || arg == "-h" {
-			cmd.Help = true
-			return cmd
-		}
-		// First non-flag argument is provider name or validate command
-		if !strings.HasPrefix(arg, "-") {
-			if arg == "validate" {
-				cmd.Validate = true
-				cmd.ValidateOpts = parseValidateArgs(args[i+1:])
-				return cmd
-			}
-			// First non-flag argument is the provider name
-			if cmd.Provider == "" {
-				cmd.Provider = arg
-				// Everything after provider is passed to Claude
-				if i+1 < len(args) {
-					cmd.ClaudeArgs = args[i+1:]
-				}
-				return cmd
-			}
-		}
-	}
-
-	// No provider specified - use current provider
-	// All arguments are passed to Claude (e.g., "ccc --debug" passes --debug to claude)
-	cmd.ClaudeArgs = args
 	return cmd
 }
 
