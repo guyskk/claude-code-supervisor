@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -23,17 +24,14 @@ var BuildTime = "unknown"
 
 // Command represents a parsed CLI command.
 type Command struct {
-	Version    bool
-	Help       bool
-	Provider   string
-	ClaudeArgs []string
-
-	// Validate command options
-	Validate     bool
-	ValidateOpts *ValidateCommand
-
-	// supervisor-hook subcommand
-	HookSubcommand bool
+	Version            bool
+	Help               bool
+	Provider           string
+	ClaudeArgs         []string
+	Validate           bool
+	ValidateOpts       *ValidateCommand
+	SupervisorHook     bool
+	SupervisorHookOpts *SupervisorHookCommand
 }
 
 // ValidateCommand represents options for the validate command.
@@ -42,49 +40,36 @@ type ValidateCommand struct {
 	ValidateAll bool
 }
 
+type SupervisorHookCommand struct {
+	SessionId string // Can be empty
+}
+
 // Parse parses command-line arguments.
-// Only recognizes --help, --version, and the first argument as provider name.
-// All other arguments are passed through to Claude.
 func Parse(args []string) *Command {
 	cmd := &Command{}
-
-	// Check for supervisor-hook subcommand first
-	if len(args) > 0 && args[0] == "supervisor-hook" {
-		cmd.HookSubcommand = true
-		return cmd
+	// 根据第一个参数判断是否是ccc的参数，其余参数透传给claude
+	firstArg := ""
+	if len(args) > 0 {
+		firstArg = args[0]
 	}
-
-	for i, arg := range args {
-		if arg == "--version" || arg == "-v" {
-			cmd.Version = true
-			return cmd
+	if firstArg == "--version" || firstArg == "-v" {
+		cmd.Version = true
+	} else if firstArg == "--help" || firstArg == "-h" {
+		cmd.Help = true
+	} else if firstArg == "validate" {
+		cmd.Validate = true
+		cmd.ValidateOpts = parseValidateArgs(args[1:])
+	} else if firstArg == "supervisor-hook" {
+		cmd.SupervisorHook = true
+		cmd.SupervisorHookOpts = parseSupervisorHookArgs(args[1:])
+	} else if !strings.HasPrefix(firstArg, "-") {
+		cmd.Provider = firstArg
+		if len(args) > 1 {
+			cmd.ClaudeArgs = args[1:]
 		}
-		if arg == "--help" || arg == "-h" {
-			cmd.Help = true
-			return cmd
-		}
-		// First non-flag argument is provider name or validate command
-		if !strings.HasPrefix(arg, "-") {
-			if arg == "validate" {
-				cmd.Validate = true
-				cmd.ValidateOpts = parseValidateArgs(args[i+1:])
-				return cmd
-			}
-			// First non-flag argument is the provider name
-			if cmd.Provider == "" {
-				cmd.Provider = arg
-				// Everything after provider is passed to Claude
-				if i+1 < len(args) {
-					cmd.ClaudeArgs = args[i+1:]
-				}
-				return cmd
-			}
-		}
+	} else {
+		cmd.ClaudeArgs = args
 	}
-
-	// No provider specified - use current provider
-	// All arguments are passed to Claude (e.g., "ccc --debug" passes --debug to claude)
-	cmd.ClaudeArgs = args
 	return cmd
 }
 
@@ -92,15 +77,40 @@ func Parse(args []string) *Command {
 func parseValidateArgs(args []string) *ValidateCommand {
 	opts := &ValidateCommand{}
 
-	for i, arg := range args {
-		if arg == "--all" {
-			opts.ValidateAll = true
-		} else if !strings.HasPrefix(arg, "--") && i == 0 {
-			// First non-flag argument is the provider name
-			opts.Provider = arg
-		}
+	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
+	fs.Usage = func() {} // Suppress default usage output
+	all := fs.Bool("all", false, "validate all providers")
+
+	if err := fs.Parse(args); err != nil {
+		// On parse error, return options with defaults
+		return opts
 	}
 
+	opts.ValidateAll = *all
+
+	// Get remaining arguments as positional args
+	remaining := fs.Args()
+	if len(remaining) > 0 {
+		opts.Provider = remaining[0]
+	}
+
+	return opts
+}
+
+// parseSupervisorHookArgs parses arguments for the supervisor-hook command.
+func parseSupervisorHookArgs(args []string) *SupervisorHookCommand {
+	opts := &SupervisorHookCommand{}
+
+	fs := flag.NewFlagSet("supervisor-hook", flag.ContinueOnError)
+	fs.Usage = func() {} // Suppress default usage output
+	sessionId := fs.String("session-id", "", "supervisor session id")
+
+	if err := fs.Parse(args); err != nil {
+		// On parse error, return options with defaults
+		return opts
+	}
+
+	opts.SessionId = *sessionId
 	return opts
 }
 
@@ -167,8 +177,8 @@ func ShowVersion() {
 // Run executes the CLI command.
 func Run(cmd *Command) error {
 	// Handle supervisor-hook subcommand
-	if cmd.HookSubcommand {
-		return RunSupervisorHook(os.Args[2:])
+	if cmd.SupervisorHook {
+		return RunSupervisorHook(cmd.SupervisorHookOpts)
 	}
 
 	// Handle --version
@@ -182,29 +192,6 @@ func Run(cmd *Command) error {
 		cfg, err := config.Load()
 		ShowHelp(cfg, err)
 		return nil
-	}
-
-	// Handle validate command (needs config but doesn't run claude)
-	if cmd.Validate {
-		cfg, err := config.Load()
-		if err != nil {
-			// Try to migrate from existing settings.json
-			if migration.CheckExisting() && migration.PromptUser() {
-				if err := migration.MigrateFromSettings(); err != nil {
-					return fmt.Errorf("error migrating from settings: %w", err)
-				}
-				// Reload config after migration
-				cfg, err = config.Load()
-				if err != nil {
-					ShowHelp(nil, err)
-					return err
-				}
-			} else {
-				ShowHelp(nil, err)
-				return err
-			}
-		}
-		return runValidate(cfg, cmd.ValidateOpts)
 	}
 
 	// Load configuration
@@ -225,6 +212,10 @@ func Run(cmd *Command) error {
 			ShowHelp(nil, err)
 			return err
 		}
+	}
+
+	if cmd.Validate {
+		return runValidate(cfg, cmd.ValidateOpts)
 	}
 
 	// Determine which provider to use

@@ -786,10 +786,13 @@ func TestE2E_HookSubcommand(t *testing.T) {
 
 	// Set CCC_SUPERVISOR_HOOK=1 to bypass the external claude command call
 	// This tests the hook's early return path without depending on claude availability
+	// Also set CCC_SUPERVISOR=1 so the hook check happens after the supervisor mode check
 	cmd := exec.CommandContext(ctx, cccBinaryPath, "supervisor-hook")
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("CCC_CONFIG_DIR=%s", testConfigDir),
 		"CCC_SUPERVISOR_HOOK=1",
+		"CCC_SUPERVISOR=1",
+		"CCC_SUPERVISOR_ID=test-supervisor-123",
 	)
 	cmd.Stdin = console.Tty()
 	cmd.Stdout = console.Tty()
@@ -807,7 +810,7 @@ func TestE2E_HookSubcommand(t *testing.T) {
 	}
 
 	// Should see the bypass output (decision is omitted, reason is set)
-	if _, err := console.ExpectString(`{"reason":"not in supervisor mode or called from supervisor hook"}`); err != nil {
+	if _, err := console.ExpectString(`{"reason":"called from supervisor hook"}`); err != nil {
 		t.Errorf("expected bypass output: %v", err)
 	}
 
@@ -977,20 +980,23 @@ func TestE2E_SupervisorOutputDecisionJSON(t *testing.T) {
 			name: "bypass scenario - allowStop=true, decision omitted",
 			envVars: []string{
 				"CCC_SUPERVISOR_HOOK=1", // Bypasses external claude call
+				"CCC_SUPERVISOR=1",      // Enable supervisor mode
+				"CCC_SUPERVISOR_ID=test-supervisor-bypass-1",
 			},
 			input:            `{"session_id":"test-session-123","stop_hook_active":true}`,
-			expectedJSON:     `{"reason":"not in supervisor mode or called from supervisor hook"}`,
-			expectedReason:   "not in supervisor mode or called from supervisor hook",
+			expectedJSON:     `{"reason":"called from supervisor hook"}`,
+			expectedReason:   "called from supervisor hook",
 			shouldNotContain: `"decision":`,
 		},
 		{
 			name: "not in supervisor mode - allowStop=true, decision omitted",
 			envVars: []string{
 				"CCC_SUPERVISOR=0", // NOT in supervisor mode
+				"CCC_SUPERVISOR_ID=test-supervisor-bypass-2",
 			},
 			input:            `{"session_id":"test-session-456","stop_hook_active":true}`,
-			expectedJSON:     `{"reason":"not in supervisor mode or called from supervisor hook"}`,
-			expectedReason:   "not in supervisor mode or called from supervisor hook",
+			expectedJSON:     `{"reason":"not in supervisor mode"}`,
+			expectedReason:   "not in supervisor mode",
 			shouldNotContain: `"decision":`,
 		},
 	}

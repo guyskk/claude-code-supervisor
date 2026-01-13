@@ -13,6 +13,7 @@ import (
 
 	"github.com/guyskk/ccc/internal/config"
 	"github.com/guyskk/ccc/internal/llmparser"
+	"github.com/guyskk/ccc/internal/prettyjson"
 	"github.com/guyskk/ccc/internal/supervisor"
 	"github.com/schlunsen/claude-agent-sdk-go"
 	"github.com/schlunsen/claude-agent-sdk-go/types"
@@ -49,63 +50,84 @@ var supervisorResultSchema = map[string]interface{}{
 	"required": []string{"allow_stop", "feedback"},
 }
 
-// RunSupervisorHook executes the supervisor-hook subcommand.
-func RunSupervisorHook(args []string) error {
-	// Step 1: Get environment variables first
-	isSupervisorMode := os.Getenv("CCC_SUPERVISOR") == "1"
-	isSupervisorHook := os.Getenv("CCC_SUPERVISOR_HOOK") == "1"
-	supervisorID := os.Getenv("CCC_SUPERVISOR_ID")
-
-	// Step 2: Create logger as early as possible
-	log := supervisor.NewSupervisorLogger(supervisorID)
-
-	// Step 3: Log environment variables for debugging
-	log.Debug("supervisor hook environment",
-		"is_supervisor_mode", isSupervisorMode,
-		"is_supervisor_hook", isSupervisorHook,
-		"supervisor_id", supervisorID,
-		"args", strings.Join(args, " "),
-	)
-
-	// Step 4: Check if this is a Supervisor's hook call (to avoid infinite loop):
-	// - When NOT in supervisor mode (!CCC_SUPERVISOR=1), output empty JSON to allow stop
-	// - When CCC_SUPERVISOR_HOOK=1 (called from supervisor itself), output empty JSON to allow stop
-	if !isSupervisorMode || isSupervisorHook {
-		return supervisor.OutputDecision(log, true, "not in supervisor mode or called from supervisor hook")
+func logCurrentEnv(log *slog.Logger) {
+	// Log environment variables for debugging
+	lines := []string{}
+	// Add all environment variables starting with CLAUDE_, ANTHROPIC_, CCC_
+	prefixes := []string{"CLAUDE_", "ANTHROPIC_", "CCC_"}
+	for _, env := range os.Environ() {
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(env, prefix) {
+				lines = append(lines, env)
+				break
+			}
+		}
 	}
+	envStr := strings.Join(lines, "\n")
+	log.Debug(fmt.Sprintf("supervisor hook environment:\n%s", envStr))
+}
 
-	// Step 5: Validate supervisorID is present
+// RunSupervisorHook executes the supervisor-hook subcommand.
+func RunSupervisorHook(opts *SupervisorHookCommand) error {
+	// Validate supervisorID is present
+	supervisorID := os.Getenv("CCC_SUPERVISOR_ID")
 	if supervisorID == "" {
 		return fmt.Errorf("CCC_SUPERVISOR_ID is required from env var")
 	}
 
-	// Step 6: Load supervisor configuration
+	// Create logger as early as possible
+	log := supervisor.NewSupervisorLogger(supervisorID)
+	logCurrentEnv(log)
+
+	// Get environment variables first
+	isSupervisorMode := os.Getenv("CCC_SUPERVISOR") == "1"
+	isSupervisorHook := os.Getenv("CCC_SUPERVISOR_HOOK") == "1"
+	// Check if this is a Supervisor's hook call (to avoid infinite loop):
+	// - When NOT in supervisor mode (!CCC_SUPERVISOR=1), output empty JSON to allow stop
+	// - When CCC_SUPERVISOR_HOOK=1 (called from supervisor itself), output empty JSON to allow stop
+	if !isSupervisorMode {
+		return supervisor.OutputDecision(log, true, "not in supervisor mode")
+	}
+	if isSupervisorHook {
+		return supervisor.OutputDecision(log, true, "called from supervisor hook")
+	}
+
+	// Load supervisor configuration
 	supervisorCfg, err := config.LoadSupervisorConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load supervisor config: %w", err)
 	}
 
-	// Step 7: Parse stdin input
+	// Get sessionID from command line argument or stdin
+	var sessionID string
+	if opts != nil && opts.SessionId != "" {
+		// Use sessionID from command line argument
+		sessionID = opts.SessionId
+		log.Debug("using session_id from command line argument", "session_id", sessionID)
+	}
 	var input StopHookInput
-	decoder := json.NewDecoder(os.Stdin)
-	if err := decoder.Decode(&input); err != nil {
-		return fmt.Errorf("failed to parse stdin JSON: %w", err)
-	}
-
-	// Step 8: Validate and log input
-	sessionID := input.SessionID
 	if sessionID == "" {
-		return fmt.Errorf("session_id is required from stdin")
+		// Parse stdin input
+		decoder := json.NewDecoder(os.Stdin)
+		if err := decoder.Decode(&input); err != nil {
+			return fmt.Errorf("failed to parse stdin JSON: %w", err)
+		}
+		sessionID = input.SessionID
+		// Log input
+		inputJSON, err := json.MarshalIndent(input, "", "  ")
+		if err != nil {
+			log.Warn("failed to marshal hook input for logging", "error", err.Error())
+		} else {
+			log.Debug("hook input", "input", string(inputJSON))
+		}
 	}
 
-	inputJSON, err := json.MarshalIndent(input, "", "  ")
-	if err != nil {
-		log.Warn("failed to marshal hook input for logging", "error", err.Error())
-	} else {
-		log.Debug("hook input", "input", string(inputJSON))
+	// Validate sessionID is present
+	if sessionID == "" {
+		return fmt.Errorf("session_id is required (either from --session-id argument or stdin)")
 	}
 
-	// Step 9: Check iteration count limit using configured max_iterations
+	// Check iteration count limit using configured max_iterations
 	maxIterations := supervisorCfg.MaxIterations
 	shouldContinue, count, err := supervisor.ShouldContinue(sessionID, maxIterations)
 	if err != nil {
@@ -119,7 +141,7 @@ func RunSupervisorHook(args []string) error {
 		return supervisor.OutputDecision(log, true, fmt.Sprintf("max iterations (%d/%d) reached", count, maxIterations))
 	}
 
-	// Step 10: Increment count
+	// Increment count
 	newCount, err := supervisor.IncrementCount(sessionID)
 	if err != nil {
 		log.Warn("failed to increment count", "error", err.Error())
@@ -130,21 +152,17 @@ func RunSupervisorHook(args []string) error {
 		)
 	}
 
-	// Step 11: Get default supervisor prompt (hardcoded)
+	// Get default supervisor prompt
 	supervisorPrompt, promptSource := getDefaultSupervisorPrompt()
 	log.Debug("supervisor prompt loaded",
 		"source", promptSource,
 		"length", len(supervisorPrompt),
 	)
 
-	// Step 12: Inform user about supervisor review
-	logFilePath, err := supervisor.GetLogFilePath(supervisorID)
-	if err != nil {
-		log.Warn("failed to get log file path", "error", err.Error())
-	}
-	log.Info("starting supervisor review", "log_file", logFilePath)
+	// Inform user about supervisor review
+	log.Info("starting supervisor review", "session_id", sessionID)
 
-	// Step 13: Run supervisor using Claude Agent SDK
+	// Run supervisor using Claude Agent SDK
 	result, err := runSupervisorWithSDK(context.Background(), sessionID, supervisorPrompt, supervisorCfg.Timeout(), log)
 	if err != nil {
 		log.Error("supervisor SDK failed", "error", err.Error())
@@ -153,7 +171,7 @@ func RunSupervisorHook(args []string) error {
 
 	log.Info("supervisor review completed")
 
-	// Step 14: Output result based on AllowStop decision
+	// Output result based on AllowStop decision
 	if result == nil {
 		log.Info("no supervisor result found, allowing stop")
 		return supervisor.OutputDecision(log, true, "no supervisor result found")
@@ -236,7 +254,10 @@ func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout
 
 	for msg := range client.ReceiveResponse(ctx) {
 		// Log raw message JSON for debugging (this is the ONE place where all messages are logged)
-		msgJSON, _ := json.Marshal(msg)
+		msgJSON, err := prettyjson.Marshal(msg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal message: %w", err)
+		}
 		log.Debug("raw message", "json", string(msgJSON))
 
 		switch m := msg.(type) {

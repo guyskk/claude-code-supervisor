@@ -300,3 +300,176 @@ func TestConstants(t *testing.T) {
 		t.Errorf("Name = %s, want claude-code-supervisor", Name)
 	}
 }
+
+func TestParseValidateArgs(t *testing.T) {
+	tests := []struct {
+		name            string
+		args            []string
+		wantProvider    string
+		wantValidateAll bool
+	}{
+		{
+			name:            "no args",
+			args:            []string{},
+			wantProvider:    "",
+			wantValidateAll: false,
+		},
+		{
+			name:            "--all flag",
+			args:            []string{"--all"},
+			wantProvider:    "",
+			wantValidateAll: true,
+		},
+		{
+			name:            "provider only",
+			args:            []string{"kimi"},
+			wantProvider:    "kimi",
+			wantValidateAll: false,
+		},
+		{
+			name:            "--all and provider (flags must come before positional args)",
+			args:            []string{"--all", "kimi"},
+			wantProvider:    "kimi",
+			wantValidateAll: true,
+		},
+		{
+			name:            "provider then --all (flags after positional are treated as positional)",
+			args:            []string{"kimi", "--all"},
+			wantProvider:    "kimi",
+			wantValidateAll: false, // --all is treated as positional, not a flag
+		},
+		{
+			name:            "provider and other args (first positional is provider, rest ignored)",
+			args:            []string{"kimi", "extra"},
+			wantProvider:    "kimi",
+			wantValidateAll: false,
+		},
+		{
+			name:            "provider with multiple extra args",
+			args:            []string{"kimi", "extra1", "extra2"},
+			wantProvider:    "kimi",
+			wantValidateAll: false,
+		},
+		{
+			name:            "unknown flag causes parse error (returns defaults)",
+			args:            []string{"--unknown", "kimi"},
+			wantProvider:    "", // parse error returns defaults
+			wantValidateAll: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseValidateArgs(tt.args)
+
+			if got.Provider != tt.wantProvider {
+				t.Errorf("parseValidateArgs() Provider = %q, want %q", got.Provider, tt.wantProvider)
+			}
+			if got.ValidateAll != tt.wantValidateAll {
+				t.Errorf("parseValidateArgs() ValidateAll = %v, want %v", got.ValidateAll, tt.wantValidateAll)
+			}
+		})
+	}
+}
+
+func TestParseSupervisorHookArgs(t *testing.T) {
+	tests := []struct {
+		name          string
+		args          []string
+		wantSessionID string
+	}{
+		{
+			name:          "no args",
+			args:          []string{},
+			wantSessionID: "",
+		},
+		{
+			name:          "--session-id provided",
+			args:          []string{"--session-id", "test-session-123"},
+			wantSessionID: "test-session-123",
+		},
+		{
+			name:          "--session-id with empty value",
+			args:          []string{"--session-id", ""},
+			wantSessionID: "",
+		},
+		{
+			name:          "unknown flag causes parse error (returns defaults)",
+			args:          []string{"--unknown", "value"},
+			wantSessionID: "", // parse error returns defaults
+		},
+		{
+			name:          "--session-id with other unknown flags (parse error)",
+			args:          []string{"--other", "value", "--session-id", "abc"},
+			wantSessionID: "", // parse error returns defaults
+		},
+		{
+			name:          "multiple --session-id (last one wins)",
+			args:          []string{"--session-id", "first", "--session-id", "second"},
+			wantSessionID: "second",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseSupervisorHookArgs(tt.args)
+
+			if got.SessionId != tt.wantSessionID {
+				t.Errorf("parseSupervisorHookArgs() SessionId = %q, want %q", got.SessionId, tt.wantSessionID)
+			}
+		})
+	}
+}
+
+func TestParse_SupervisorHookCommand(t *testing.T) {
+	tests := []struct {
+		name          string
+		args          []string
+		wantHook      bool
+		wantSessionID string
+	}{
+		{
+			name:          "supervisor-hook without args",
+			args:          []string{"supervisor-hook"},
+			wantHook:      true,
+			wantSessionID: "",
+		},
+		{
+			name:          "supervisor-hook with --session-id",
+			args:          []string{"supervisor-hook", "--session-id", "test-123"},
+			wantHook:      true,
+			wantSessionID: "test-123",
+		},
+		{
+			name:          "supervisor-hook with --session-id empty",
+			args:          []string{"supervisor-hook", "--session-id", ""},
+			wantHook:      true,
+			wantSessionID: "",
+		},
+		{
+			name:          "supervisor-hook with extra args",
+			args:          []string{"supervisor-hook", "--session-id", "abc", "extra"},
+			wantHook:      true,
+			wantSessionID: "abc",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := Parse(tt.args)
+
+			if cmd.SupervisorHook != tt.wantHook {
+				t.Errorf("Parse() SupervisorHook = %v, want %v", cmd.SupervisorHook, tt.wantHook)
+			}
+			if cmd.SupervisorHookOpts == nil {
+				if tt.wantSessionID != "" {
+					t.Errorf("Parse() SupervisorHookOpts = nil, want SessionId %q", tt.wantSessionID)
+				}
+			} else {
+				if cmd.SupervisorHookOpts.SessionId != tt.wantSessionID {
+					t.Errorf("Parse() SupervisorHookOpts.SessionId = %q, want %q", cmd.SupervisorHookOpts.SessionId, tt.wantSessionID)
+				}
+			}
+		})
+	}
+}
