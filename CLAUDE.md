@@ -1,27 +1,31 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
-
-These instructions are for AI assistants working in this project.
-
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-
-Keep this managed block so 'openspec update' can refresh the instructions.
-
-<!-- OPENSPEC:END -->
-
 ## 项目背景
 
-本项目使用 OpenSpec 管理开发流程，你要根据具体任务情况，用相应的 Skills，例如 openspec:proposal 规划需求和任务，openspec:apply 执行任务，完成后使用 openspec:archive 归档。
+具体内容见 @README.md（必读），@docs/project.md（必读）
 
-具体内容见 @README.md （必读），@/openspec/AGENTS.md (必读) 和 @openspec/project.md （必读）。
+## 开发流程
+
+本项目使用 SpecKit 管理开发流程，你要根据具体需求，用相应的 Skills 按流程完成开发任务。
+
+1. Create the spec
+Use the /speckit.specify command to describe what you want to build. Focus on the what and why, not the tech stack.
+
+2. Create a technical implementation plan
+Use the /speckit.plan command to provide your tech stack and architecture choices.
+
+3. Break down into tasks
+Use /speckit.tasks to create an actionable task list from your implementation plan.
+
+4. Execute implementation
+Use /speckit.implement to execute all tasks and build your feature according to the plan.
+
+For detailed step-by-step instructions, see our comprehensive guide @docs/spec-driven.md (必读).
+
+**重要说明‼️ ：具体内容 @docs/spec-driven.md 非常重要！请必须仔细阅读并遵循这个指南。**
+
+### 特别说明：你要使用中文
+
+1. 我的母语是中文，你要用中文和我沟通，这样更方便。
+2. SpecKit开发流程创建的所有文档，全部都用中文编写。
 
 ## Write idiomatic Go code
 
