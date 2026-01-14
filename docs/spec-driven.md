@@ -1,5 +1,14 @@
 # Specification-Driven Development (SDD)
 
+## 特别说明：使用中文
+
+**本项目所有开发文档必须使用中文编写。**
+
+1. 我的母语是中文，使用中文沟通更加高效准确。
+2. SpecKit 开发流程创建的所有文档（spec.md、plan.md、tasks.md 等）必须使用中文编写。
+3. 用户故事、需求描述、验收场景、任务说明全部使用中文。
+4. 代码注释优先使用中文，Go doc 注释使用中文。
+
 ## The Power Inversion
 
 For decades, code has been king. Specifications served code—they were the scaffolding we built and then discarded once the "real work" of coding began. We wrote PRDs to guide development, created design docs to inform implementation, drew diagrams to visualize architecture. But these were always subordinate to the code itself. Code was truth. Everything else was, at best, good intentions. Code was the source of truth, and as it moved forward, specs rarely kept pace. As the asset (code) and the implementation are one, it's not easy to have a parallel implementation without trying to build from the code.
@@ -273,103 +282,86 @@ The templates transform the LLM from a creative writer into a disciplined specif
 
 ## The Constitutional Foundation: Enforcing Architectural Discipline
 
-At the heart of SDD lies a constitution—a set of immutable principles that govern how specifications become code. The constitution (`memory/constitution.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
+At the heart of SDD lies a constitution—a set of immutable principles that govern how specifications become code. The constitution (`.specify/memory/constitution.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
 
-### The Nine Articles of Development
+### The ccc Project's Six Principles
 
-The constitution defines nine articles that shape every aspect of the development process:
+The ccc (Claude Code Supervisor) project defines six principles that shape every aspect of the development process. See `.specify/memory/constitution.md` for the complete constitution.
 
-#### Article I: Library-First Principle
+#### 原则一：单二进制分发 (Single Binary Distribution) - NON-NEGOTIABLE
 
-Every feature must begin as a standalone library—no exceptions. This forces modular design from the start:
+The final artifact MUST be a single, statically-linked binary executable with no runtime dependencies.
 
-```text
-Every feature in Specify MUST begin its existence as a standalone library.
-No feature shall be implemented directly within application code without
-first being abstracted into a reusable library component.
-```
+- All dependencies MUST be statically linked during build (Go default behavior)
+- The binary MUST be self-contained and executable on target systems without additional installations
+- Distribution MUST use pre-compiled binaries for supported platforms (darwin-amd64, darwin-arm64, linux-amd64, linux-arm64)
+- NO external configuration files, shared libraries, or runtime dependencies required for execution
 
-This principle ensures that specifications generate modular, reusable code rather than monolithic applications. When the LLM generates an implementation plan, it must structure features as libraries with clear boundaries and minimal dependencies.
+**Rationale**: ccc is a user-facing CLI tool that must "just work" after download. Static linking ensures compatibility across different Linux distributions and macOS versions without dependency hell.
 
-#### Article II: CLI Interface Mandate
+#### 原则二：代码质量标准 (Code Quality Standards)
 
-Every library must expose its functionality through a command-line interface:
+All code MUST pass automated quality checks before integration.
 
-```text
-All CLI interfaces MUST:
-- Accept text as input (via stdin, arguments, or files)
-- Produce text as output (via stdout)
-- Support JSON format for structured data exchange
-```
+- `gofmt` MUST be used for all Go source files (CI-enforced)
+- `go vet` MUST pass without warnings (CI-enforced)
+- Standard Go naming conventions MUST be followed
+- Exported functions and types MUST have Go doc comments
 
-This enforces observability and testability. The LLM cannot hide functionality inside opaque classes—everything must be accessible and verifiable through text-based interfaces.
+#### 原则三：测试规范 (Testing Discipline)
 
-#### Article III: Test-First Imperative
+All code changes MUST be validated through automated testing.
 
-The most transformative article—no code before tests:
+- Unit tests MUST use `go test ./...`
+- Race detector MUST be enabled in CI (`go test -race ./...`)
+- Tests MUST use `CCC_CONFIG_DIR` for isolation to avoid affecting user configurations
+- Mock dependencies via function overriding (e.g., `getClaudeDirFunc`)
 
-```text
-This is NON-NEGOTIABLE: All implementation MUST follow strict Test-Driven Development.
-No implementation code shall be written before:
-1. Unit tests are written
-2. Tests are validated and approved by the user
-3. Tests are confirmed to FAIL (Red phase)
-```
+#### 原则四：向后兼容 (Backward Compatibility)
 
-This completely inverts traditional AI code generation. Instead of generating code and hoping it works, the LLM must first generate comprehensive tests that define behavior, get them approved, and only then generate implementation.
+Configuration file format changes MUST maintain backward compatibility.
 
-#### Articles VII & VIII: Simplicity and Anti-Abstraction
+- Existing `~/.claude/ccc.json` files MUST remain valid after updates
+- New configuration fields MUST have sensible defaults
+- Deprecated fields MUST be supported for at least one major version cycle
+- Breaking changes require a major version bump and migration documentation
 
-These paired articles combat over-engineering:
+#### 原则五：跨平台支持 (Cross-Platform Support)
 
-```text
-Section 7.3: Minimal Project Structure
-- Maximum 3 projects for initial implementation
-- Additional projects require documented justification
+ccc MUST support all target platforms equally.
 
-Section 8.1: Framework Trust
-- Use framework features directly rather than wrapping them
-```
+- Support matrix: darwin-amd64, darwin-arm64, linux-amd64, linux-arm64
+- Build script (`build.sh`) MUST produce binaries for all platforms via `--all` flag
+- Platform-specific code MUST be minimized and clearly isolated
+- Behavior MUST be consistent across all supported platforms
 
-When an LLM might naturally create elaborate abstractions, these articles force it to justify every layer of complexity. The implementation plan template's "Phase -1 Gates" directly enforce these principles.
+#### 原则六：错误处理与可观测性 (Error Handling and Observability)
 
-#### Article IX: Integration-First Testing
+All errors MUST be explicit and actionable.
 
-Prioritizes real-world testing over isolated unit tests:
-
-```text
-Tests MUST use realistic environments:
-- Prefer real databases over mocks
-- Use actual service instances over stubs
-- Contract tests mandatory before implementation
-```
-
-This ensures generated code works in practice, not just in theory.
+- Errors MUST be returned with context using `fmt.Errorf` wrapping
+- Error messages MUST guide users toward resolution
+- CLI output MUST use appropriate streams (stdout for success, stderr for errors)
+- Configuration validation MUST happen early with clear error messages
 
 ### Constitutional Enforcement Through Templates
 
-The implementation plan template operationalizes these articles through concrete checkpoints:
+The implementation plan template (`.specify/templates/plan-template.md`) operationalizes these principles through concrete checkpoints in the **宪章检查** section:
 
 ```markdown
-### Phase -1: Pre-Implementation Gates
+## 宪章检查
 
-#### Simplicity Gate (Article VII)
+*门禁：必须在第 0 阶段研究前通过。第 1 阶段设计后再次检查。*
 
-- [ ] Using ≤3 projects?
-- [ ] No future-proofing?
+### ccc 项目宪章合规检查
 
-#### Anti-Abstraction Gate (Article VIII)
-
-- [ ] Using framework directly?
-- [ ] Single model representation?
-
-#### Integration-First Gate (Article IX)
-
-- [ ] Contracts defined?
-- [ ] Contract tests written?
+- [ ] **原则一：单二进制分发** - 最终产物是单一静态链接二进制文件
+- [ ] **原则二：代码质量标准** - 符合 gofmt、go vet 要求
+- [ ] **原则三：测试规范** - 包含单元测试和竞态检测
+- [ ] **原则四：向后兼容** - 配置格式变更保持兼容
+- [ ] **原则五：跨平台支持** - 支持 darwin/linux, amd64/arm64
+- [ ] **原则六：错误处理与可观测性** - 错误明确且可操作
 ```
-
-These gates act as compile-time checks for architectural principles. The LLM cannot proceed without either passing the gates or documenting justified exceptions in the "Complexity Tracking" section.
 
 ### The Power of Immutable Principles
 
@@ -378,32 +370,18 @@ The constitution's power lies in its immutability. While implementation details 
 1. **Consistency Across Time**: Code generated today follows the same principles as code generated next year
 2. **Consistency Across LLMs**: Different AI models produce architecturally compatible code
 3. **Architectural Integrity**: Every feature reinforces rather than undermines the system design
-4. **Quality Guarantees**: Test-first, library-first, and simplicity principles ensure maintainable code
-
-### Constitutional Evolution
-
-While principles are immutable, their application can evolve:
-
-```text
-Section 4.2: Amendment Process
-Modifications to this constitution require:
-- Explicit documentation of the rationale for change
-- Review and approval by project maintainers
-- Backwards compatibility assessment
-```
-
-This allows the methodology to learn and improve while maintaining stability. The constitution shows its own evolution with dated amendments, demonstrating how principles can be refined based on real-world experience.
+4. **Quality Guarantees**: Static linking, race detection, and backward compatibility ensure maintainable code
 
 ### Beyond Rules: A Development Philosophy
 
 The constitution isn't just a rulebook—it's a philosophy that shapes how LLMs think about code generation:
 
-- **Observability Over Opacity**: Everything must be inspectable through CLI interfaces
-- **Simplicity Over Cleverness**: Start simple, add complexity only when proven necessary
-- **Integration Over Isolation**: Test in real environments, not artificial ones
-- **Modularity Over Monoliths**: Every feature is a library with clear boundaries
+- **Simplicity Over Complexity**: Single binary distribution over complex installers
+- **Quality Over Speed**: Automated checks and race detection over quick fixes
+- **User Experience Over Convenience**: Clear error messages and backward compatibility
+- **Consistency Over Cleverness**: Standard Go conventions over custom patterns
 
-By embedding these principles into the specification and planning process, SDD ensures that generated code isn't just functional—it's maintainable, testable, and architecturally sound. The constitution transforms AI from a code generator into an architectural partner that respects and reinforces system design principles.
+By embedding these principles into the specification and planning process, SDD ensures that generated code isn't just functional—it's maintainable, testable, and architecturally sound.
 
 ## The Transformation
 
