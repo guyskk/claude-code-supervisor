@@ -59,7 +59,7 @@ func setupTestDir(t *testing.T) func() {
 	}
 }
 
-func TestSwitch(t *testing.T) {
+func TestSwitchWithHook(t *testing.T) {
 	t.Run("switch to existing provider", func(t *testing.T) {
 		cleanup := setupTestDir(t)
 		defer cleanup()
@@ -72,14 +72,14 @@ func TestSwitch(t *testing.T) {
 		}
 
 		// Switch to glm
-		result, err := Switch(cfg, "glm")
+		result, err := SwitchWithHook(cfg, "glm")
 		if err != nil {
-			t.Fatalf("Switch() error = %v", err)
+			t.Fatalf("SwitchWithHook() error = %v", err)
 		}
 
 		// Verify env vars
 		if result.EnvVars == nil {
-			t.Fatal("Switch() result.EnvVars should not be nil")
+			t.Fatal("SwitchWithHook() result.EnvVars should not be nil")
 		}
 
 		// Build env map for easier testing
@@ -101,6 +101,11 @@ func TestSwitch(t *testing.T) {
 			t.Error("Settings should not contain 'env' field")
 		}
 
+		// Verify hooks are present
+		if _, exists := result.Settings["hooks"]; !exists {
+			t.Error("Settings should contain 'hooks' field")
+		}
+
 		// Verify current_provider updated
 		if cfg.CurrentProvider != "glm" {
 			t.Errorf("CurrentProvider = %s, want glm", cfg.CurrentProvider)
@@ -111,6 +116,17 @@ func TestSwitch(t *testing.T) {
 		if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
 			t.Errorf("Settings file should exist at %s", settingsPath)
 		}
+
+		// Verify supervisor command files were created
+		commandsDir := config.GetDir() + "/commands"
+		supervisorOnPath := commandsDir + "/supervisor.md"
+		supervisorOffPath := commandsDir + "/supervisor-off.md"
+		if _, err := os.Stat(supervisorOnPath); os.IsNotExist(err) {
+			t.Errorf("supervisor.md should exist at %s", supervisorOnPath)
+		}
+		if _, err := os.Stat(supervisorOffPath); os.IsNotExist(err) {
+			t.Errorf("supervisor-off.md should exist at %s", supervisorOffPath)
+		}
 	})
 
 	t.Run("switch to non-existing provider", func(t *testing.T) {
@@ -119,9 +135,9 @@ func TestSwitch(t *testing.T) {
 
 		cfg := setupTestConfig(t)
 
-		_, err := Switch(cfg, "unknown")
+		_, err := SwitchWithHook(cfg, "unknown")
 		if err == nil {
-			t.Fatal("Switch() should error for unknown provider")
+			t.Fatal("SwitchWithHook() should error for unknown provider")
 		}
 		if !strings.Contains(err.Error(), "provider 'unknown' not found") {
 			t.Errorf("Error message should mention 'provider 'unknown' not found', got: %v", err)
@@ -129,9 +145,9 @@ func TestSwitch(t *testing.T) {
 	})
 
 	t.Run("nil config", func(t *testing.T) {
-		_, err := Switch(nil, "kimi")
+		_, err := SwitchWithHook(nil, "kimi")
 		if err == nil {
-			t.Fatal("Switch() should error for nil config")
+			t.Fatal("SwitchWithHook() should error for nil config")
 		}
 	})
 }

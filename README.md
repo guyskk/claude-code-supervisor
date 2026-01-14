@@ -42,9 +42,6 @@ You can also create the config file manually:
       "defaultMode": "bypassPermissions"
     }
   },
-  "supervisor": {
-    "enabled": true
-  },
   "providers": {
     "glm": {
       "env": {
@@ -65,8 +62,6 @@ You can also create the config file manually:
 ```
 
 > **Security Warning**: `bypassPermissions` allows Claude Code to execute tools without confirmation. Only use this in trusted environments.
->
-> **Token Consumption**: `supervisor.enabled` significantly improves task completion but also increases token consumption.
 
 ### 3. Use
 
@@ -100,21 +95,23 @@ ccc validate --all
 
 Supervisor Mode is the most valuable feature of `ccc`. It automatically reviews the Agent's work after each stop and provides feedback if incomplete.
 
-### Enable Supervisor Mode
+### How to Use
 
-**Default (config file)**: Set `supervisor.enabled: true` in your `ccc.json` (see Quick Start above).
+1. Start `ccc`, chat with the Agent to confirm requirements and approach:
 
-**Temporary override**: Use the `CCC_SUPERVISOR` environment variable to temporarily override the config:
+   ```bash
+   ccc
+   ```
 
-```bash
-# Force enable (even if config.enabled = false)
-export CCC_SUPERVISOR=1
-ccc
+2. Enable Supervisor Mode using the slash command:
 
-# Force disable (even if config.enabled = true)
-export CCC_SUPERVISOR=0
-ccc
-```
+   ```text
+   /supervisor OK, start executing
+   ```
+
+3. The Agent will execute the task, and Supervisor will automatically review after each stop
+   - If work is incomplete, Supervisor provides feedback and Agent continues
+   - This repeats until Supervisor confirms the work is complete
 
 ### How It Works
 
@@ -139,7 +136,6 @@ Config file location, default: `~/.claude/ccc.json`
     "alwaysThinkingEnabled": true
   },
   "supervisor": {
-    "enabled": true,
     "max_iterations": 20,
     "timeout_seconds": 600
   },
@@ -192,11 +188,8 @@ Each provider only needs to specify the fields it wants to override. Common fiel
 
 | Field              | Description                                    | Default |
 | ----------------- | ---------------------------------------------- | ------- |
-| `enabled`         | Enable Supervisor mode                         | `false` |
 | `max_iterations`  | Maximum iterations before forcing stop         | `20`    |
-| `timeout_seconds` | Timeout per supervisor call                    | `600`   |
-
-Can be overridden with `CCC_SUPERVISOR=1` environment variable.
+| `timeout_seconds` | Timeout per supervisor call in seconds        | `600`   |
 
 ### Custom Supervisor Prompt
 
@@ -207,15 +200,10 @@ Create `~/.claude/SUPERVISOR.md` to customize the Supervisor prompt. This file o
 | Variable           | Description                                        |
 | ------------------ | -------------------------------------------------- |
 | `CCC_CONFIG_DIR`   | Override config directory (default: `~/.claude/`)   |
-| `CCC_SUPERVISOR`   | Enable Supervisor mode (`"1"` = enable, `"0"` = disable) |
 
 ```bash
 # Debug with custom config directory
 CCC_CONFIG_DIR=./tmp ccc glm
-
-# Enable Supervisor mode
-export CCC_SUPERVISOR=1
-ccc glm
 ```
 
 ## Building from Source

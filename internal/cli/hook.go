@@ -79,17 +79,21 @@ func RunSupervisorHook(opts *SupervisorHookCommand) error {
 	log := supervisor.NewSupervisorLogger(supervisorID)
 	logCurrentEnv(log)
 
-	// Get environment variables first
-	isSupervisorMode := os.Getenv("CCC_SUPERVISOR") == "1"
 	isSupervisorHook := os.Getenv("CCC_SUPERVISOR_HOOK") == "1"
-	// Check if this is a Supervisor's hook call (to avoid infinite loop):
-	// - When NOT in supervisor mode (!CCC_SUPERVISOR=1), output empty JSON to allow stop
-	// - When CCC_SUPERVISOR_HOOK=1 (called from supervisor itself), output empty JSON to allow stop
-	if !isSupervisorMode {
-		return supervisor.OutputDecision(log, true, "not in supervisor mode")
-	}
 	if isSupervisorHook {
 		return supervisor.OutputDecision(log, true, "called from supervisor hook")
+	}
+
+	// Load state to check if supervisor mode is enabled
+	state, err := supervisor.LoadState(supervisorID)
+	if err != nil {
+		return fmt.Errorf("failed to load supervisor state: %w", err)
+	}
+
+	// Check if supervisor mode is enabled
+	if !state.Enabled {
+		log.Debug("supervisor mode disabled, allowing stop", "enabled", state.Enabled)
+		return supervisor.OutputDecision(log, true, "supervisor mode disabled")
 	}
 
 	// Load supervisor configuration
@@ -116,7 +120,7 @@ func RunSupervisorHook(opts *SupervisorHookCommand) error {
 		// Log input
 		inputJSON, err := json.MarshalIndent(input, "", "  ")
 		if err != nil {
-			log.Warn("failed to marshal hook input for logging", "error", err.Error())
+			log.Warn("failed to marshal hook input", "error", err.Error())
 		} else {
 			log.Debug("hook input", "input", string(inputJSON))
 		}
@@ -131,7 +135,7 @@ func RunSupervisorHook(opts *SupervisorHookCommand) error {
 	maxIterations := supervisorCfg.MaxIterations
 	shouldContinue, count, err := supervisor.ShouldContinue(sessionID, maxIterations)
 	if err != nil {
-		log.Warn("failed to check state", "error", err.Error())
+		log.Warn("failed to check supervisor state", "error", err.Error())
 	}
 	if !shouldContinue {
 		log.Info("max iterations reached, allowing stop",

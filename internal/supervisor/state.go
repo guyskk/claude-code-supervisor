@@ -29,6 +29,7 @@ func getDefaultStateDir() (string, error) {
 // State represents the supervisor state for a session.
 type State struct {
 	SessionID string    `json:"session_id"`
+	Enabled   bool      `json:"enabled"`
 	Count     int       `json:"count"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -53,7 +54,8 @@ func GetStatePath(sessionID string) (string, error) {
 }
 
 // LoadState loads the supervisor state for a given session.
-// If the state file doesn't exist, returns a new state with count 0.
+// If the state file doesn't exist, returns a new state with count 0 and enabled false.
+// If the state file exists but doesn't have the enabled field, defaults to false.
 func LoadState(sessionID string) (*State, error) {
 	statePath, err := GetStatePath(sessionID)
 	if err != nil {
@@ -67,6 +69,7 @@ func LoadState(sessionID string) (*State, error) {
 			// No existing state, return new state
 			return &State{
 				SessionID: sessionID,
+				Enabled:   false,
 				Count:     0,
 				CreatedAt: time.Now(),
 				UpdatedAt: time.Now(),

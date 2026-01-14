@@ -10,9 +10,6 @@ import (
 func TestDefaultSupervisorConfig(t *testing.T) {
 	cfg := DefaultSupervisorConfig()
 
-	if cfg.Enabled {
-		t.Error("default Enabled should be false")
-	}
 	if cfg.MaxIterations != 20 {
 		t.Errorf("default MaxIterations = %d, want 20", cfg.MaxIterations)
 	}
@@ -125,7 +122,6 @@ func TestLoadSupervisorConfig_EnvOverride(t *testing.T) {
 
 func TestSupervisorConfig_MarshalJSON(t *testing.T) {
 	cfg := &SupervisorConfig{
-		Enabled:        true,
 		MaxIterations:  30,
 		TimeoutSeconds: 900,
 	}
@@ -142,9 +138,6 @@ func TestSupervisorConfig_MarshalJSON(t *testing.T) {
 	}
 
 	// Verify fields
-	if result["enabled"] != true {
-		t.Errorf("enabled = %v, want true", result["enabled"])
-	}
 	// JSON numbers are float64
 	if result["max_iterations"] != float64(30) {
 		t.Errorf("max_iterations = %v, want 30", result["max_iterations"])
@@ -153,11 +146,8 @@ func TestSupervisorConfig_MarshalJSON(t *testing.T) {
 		t.Errorf("timeout_seconds = %v, want 900", result["timeout_seconds"])
 	}
 
-	// Verify prompt_path and log_level are not included
-	if _, exists := result["prompt_path"]; exists {
-		t.Error("prompt_path should not be included in JSON")
-	}
-	if _, exists := result["log_level"]; exists {
-		t.Error("log_level should not be included in JSON")
+	// Verify enabled is not included
+	if _, exists := result["enabled"]; exists {
+		t.Error("enabled should not be included in JSON")
 	}
 }

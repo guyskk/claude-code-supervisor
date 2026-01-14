@@ -26,57 +26,9 @@ type SwitchResult struct {
 	EnvVars []EnvPair
 }
 
-// Switch switches to the specified provider by merging configurations.
-// It saves the merged settings (without env) to settings.json and returns the merged env.
-// The env variables should be passed to the claude subprocess as environment variables.
-func Switch(cfg *config.Config, providerName string) (*SwitchResult, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-
-	// Check if provider exists
-	providerSettings, exists := cfg.Providers[providerName]
-	if !exists {
-		return nil, fmt.Errorf("provider '%s' not found in configuration", providerName)
-	}
-
-	// Create the merged settings
-	// Start with the base settings template
-	mergedSettings := config.DeepMerge(cfg.Settings, providerSettings)
-
-	// Extract env before removing it from settings
-	envMap := config.GetEnv(mergedSettings)
-
-	// Remove env from settings before saving (env will be passed via environment variables)
-	settingsWithoutEnv := make(map[string]interface{})
-	for k, v := range mergedSettings {
-		if k != "env" {
-			settingsWithoutEnv[k] = v
-		}
-	}
-
-	// Save the settings without env to settings.json
-	if err := config.SaveSettings(settingsWithoutEnv); err != nil {
-		return nil, fmt.Errorf("failed to save settings: %w", err)
-	}
-
-	// Update current_provider in ccc.json
-	cfg.CurrentProvider = providerName
-	if err := config.Save(cfg); err != nil {
-		return nil, fmt.Errorf("failed to update current provider: %w", err)
-	}
-
-	// Convert env map to EnvPair slice
-	envVars := envMapToPairs(envMap)
-
-	return &SwitchResult{
-		Settings: settingsWithoutEnv,
-		EnvVars:  envVars,
-	}, nil
-}
-
 // SwitchWithHook switches to the specified provider and adds Stop hook configuration.
 // It generates settings.json (without env) with Stop hook for Supervisor mode.
+// It also creates slash command files for enabling/disabling Supervisor mode.
 // Returns the merged env that should be passed to the claude subprocess.
 func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, error) {
 	if cfg == nil {
@@ -142,6 +94,11 @@ func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, err
 		return nil, fmt.Errorf("failed to write settings: %w", err)
 	}
 
+	// Create slash command files for enabling/disabling Supervisor mode
+	if err := createSupervisorCommandFiles(cccPath); err != nil {
+		return nil, fmt.Errorf("failed to create supervisor command files: %w", err)
+	}
+
 	// Update current_provider in ccc.json
 	cfg.CurrentProvider = providerName
 	if err := config.Save(cfg); err != nil {
@@ -155,6 +112,33 @@ func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, err
 		Settings: settingsWithHook,
 		EnvVars:  envVars,
 	}, nil
+}
+
+// createSupervisorCommandFiles creates the slash command files for enabling/disabling Supervisor mode.
+func createSupervisorCommandFiles(cccPath string) error {
+	// Get the commands directory
+	commandsDir := config.GetDir() + "/commands"
+
+	// Ensure commands directory exists
+	if err := os.MkdirAll(commandsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create commands directory: %w", err)
+	}
+
+	// Create supervisor.md (enable command)
+	supervisorOnContent := fmt.Sprintf("---\ndescription: Enable supervisor mode\n---\n$ARGUMENTS!`%s supervisor-mode on`\n", cccPath)
+	supervisorOnPath := commandsDir + "/supervisor.md"
+	if err := os.WriteFile(supervisorOnPath, []byte(supervisorOnContent), 0644); err != nil {
+		return fmt.Errorf("failed to write command supervisor.md: %w", err)
+	}
+
+	// Create supervisor-off.md (disable command)
+	supervisorOffContent := fmt.Sprintf("---\ndescription: Disable supervisor mode\n---\n$ARGUMENTS!`%s supervisor-mode off`\n", cccPath)
+	supervisorOffPath := commandsDir + "/supervisor-off.md"
+	if err := os.WriteFile(supervisorOffPath, []byte(supervisorOffContent), 0644); err != nil {
+		return fmt.Errorf("failed to write command supervisor-off.md: %w", err)
+	}
+
+	return nil
 }
 
 // envMapToPairs converts a map[string]interface{} to []EnvPair.
