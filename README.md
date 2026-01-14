@@ -97,21 +97,19 @@ Supervisor Mode is the most valuable feature of `ccc`. It automatically reviews 
 
 ### How to Use
 
-1. Start `ccc` with your provider:
+1. Start `ccc`, chat with the Agent to confirm requirements and approach:
 
    ```bash
-   ccc glm
+   ccc
    ```
 
-2. Communicate with the Agent to confirm requirements and approach
-
-3. Enable Supervisor Mode using the slash command:
+2. Enable Supervisor Mode using the slash command:
 
    ```text
    /supervisor OK, start executing
    ```
 
-4. The Agent will execute the task, and Supervisor will automatically review after each stop
+3. The Agent will execute the task, and Supervisor will automatically review after each stop
    - If work is incomplete, Supervisor provides feedback and Agent continues
    - This repeats until Supervisor confirms the work is complete
 
@@ -122,18 +120,6 @@ Supervisor Mode is the most valuable feature of `ccc`. It automatically reviews 
 3. If work is incomplete or low quality, Supervisor provides feedback
 4. Agent continues with the feedback
 5. This repeats until Supervisor confirms the work is complete
-
-### Manual Control
-
-You can also manually enable/disable Supervisor Mode:
-
-```bash
-# Enable Supervisor Mode
-ccc supervisor-mode on
-
-# Disable Supervisor Mode
-ccc supervisor-mode off
-```
 
 ## Configuration
 

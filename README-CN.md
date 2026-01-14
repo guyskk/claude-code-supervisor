@@ -97,21 +97,19 @@ Supervisor 模式是 `ccc` 最有价值的特性。它会在 Agent 每次停止�
 
 ### 如何使用
 
-1. 启动 `ccc` 并选择提供商：
+1. 启动 `ccc`，与 Agent 沟通确认需求和方案：
 
    ```bash
-   ccc glm
+   ccc
    ```
 
-2. 与 Agent 沟通确认需求和方案
-
-3. 使用斜杠命令启用 Supervisor 模式：
+2. 使用斜杠命令启用 Supervisor 模式：
 
    ```text
    /supervisor 好，开始执行
    ```
 
-4. Agent 会执行任务，Supervisor 会在每次停止后自动审查
+3. Agent 会执行任务，Supervisor 会在每次停止后自动审查
    - 如果工作未完成，Supervisor 会提供反馈，Agent 继续执行
    - 重复直到 Supervisor 确认工作完成
 
@@ -122,18 +120,6 @@ Supervisor 模式是 `ccc` 最有价值的特性。它会在 Agent 每次停止�
 3. 如果工作未完成或质量不佳，Supervisor 提供反馈
 4. Agent 根据反馈继续工作
 5. 重复直到 Supervisor 确认工作完成
-
-### 手动控制
-
-你也可以手动启用/禁用 Supervisor 模式：
-
-```bash
-# 启用 Supervisor 模式
-ccc supervisor-mode on
-
-# 禁用 Supervisor 模式
-ccc supervisor-mode off
-```
 
 ## 配置说明
 

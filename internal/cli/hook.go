@@ -79,11 +79,15 @@ func RunSupervisorHook(opts *SupervisorHookCommand) error {
 	log := supervisor.NewSupervisorLogger(supervisorID)
 	logCurrentEnv(log)
 
+	isSupervisorHook := os.Getenv("CCC_SUPERVISOR_HOOK") == "1"
+	if isSupervisorHook {
+		return supervisor.OutputDecision(log, true, "called from supervisor hook")
+	}
+
 	// Load state to check if supervisor mode is enabled
 	state, err := supervisor.LoadState(supervisorID)
 	if err != nil {
-		log.Warn("failed to load state, allowing stop", "error", err.Error())
-		return supervisor.OutputDecision(log, true, "failed to load state")
+		return fmt.Errorf("failed to load supervisor state: %w", err)
 	}
 
 	// Check if supervisor mode is enabled
@@ -116,7 +120,7 @@ func RunSupervisorHook(opts *SupervisorHookCommand) error {
 		// Log input
 		inputJSON, err := json.MarshalIndent(input, "", "  ")
 		if err != nil {
-			log.Warn("failed to marshal hook input for logging", "error", err.Error())
+			log.Warn("failed to marshal hook input", "error", err.Error())
 		} else {
 			log.Debug("hook input", "input", string(inputJSON))
 		}
@@ -131,7 +135,7 @@ func RunSupervisorHook(opts *SupervisorHookCommand) error {
 	maxIterations := supervisorCfg.MaxIterations
 	shouldContinue, count, err := supervisor.ShouldContinue(sessionID, maxIterations)
 	if err != nil {
-		log.Warn("failed to check state", "error", err.Error())
+		log.Warn("failed to check supervisor state", "error", err.Error())
 	}
 	if !shouldContinue {
 		log.Info("max iterations reached, allowing stop",
@@ -218,6 +222,9 @@ func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout
 		WithForkSession(true).                                                                            // Fork the current session
 		WithResume(sessionID).                                                                            // Resume from specific session
 		WithSettingSources(types.SettingSourceUser, types.SettingSourceProject, types.SettingSourceLocal) // Load all setting sources
+
+	// Set environment variable to avoid infinite loop
+	opts.Env["CCC_SUPERVISOR_HOOK"] = "1"
 
 	log.Debug("SDK options",
 		"fork_session", "true",

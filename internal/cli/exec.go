@@ -48,11 +48,11 @@ func runClaude(cfg *config.Config, providerName string, claudeArgs []string) err
 	if err != nil {
 		return fmt.Errorf("failed to get log file path: %w", err)
 	}
-	fmt.Printf("Supervisor session: tail -f %s\n", logPath)
+	fmt.Printf("Supervisor log: tail -f %s\n", logPath)
 
 	// Write initial log messages directly to file (not stderr)
 	timestamp := time.Now().Format(time.RFC3339Nano)
-	fmt.Fprintf(logFile, "%s INFO Supervisor session started supervisor_id=%s\n", timestamp, supervisorID)
+	fmt.Fprintf(logFile, "%s INFO Supervisor started supervisor_id=%s\n", timestamp, supervisorID)
 	fmt.Fprintf(logFile, "%s INFO Use /supervisor command to enable supervisor mode\n", timestamp)
 
 	// Switch provider (always use SwitchWithHook to generate settings with Stop hook)

@@ -125,25 +125,17 @@ func createSupervisorCommandFiles(cccPath string) error {
 	}
 
 	// Create supervisor.md (enable command)
-	supervisorOnContent := fmt.Sprintf(`---
-description: Enable supervisor mode
----
-$ARGUMENTS!%s supervisor-mode on
-`, cccPath)
+	supervisorOnContent := fmt.Sprintf("---\ndescription: Enable supervisor mode\n---\n$ARGUMENTS!`%s supervisor-mode on`\n", cccPath)
 	supervisorOnPath := commandsDir + "/supervisor.md"
 	if err := os.WriteFile(supervisorOnPath, []byte(supervisorOnContent), 0644); err != nil {
-		return fmt.Errorf("failed to write supervisor.md: %w", err)
+		return fmt.Errorf("failed to write command supervisor.md: %w", err)
 	}
 
 	// Create supervisor-off.md (disable command)
-	supervisorOffContent := fmt.Sprintf(`---
-description: Disable supervisor mode
----
-$ARGUMENTS!%s supervisor-mode off
-`, cccPath)
+	supervisorOffContent := fmt.Sprintf("---\ndescription: Disable supervisor mode\n---\n$ARGUMENTS!`%s supervisor-mode off`\n", cccPath)
 	supervisorOffPath := commandsDir + "/supervisor-off.md"
 	if err := os.WriteFile(supervisorOffPath, []byte(supervisorOffContent), 0644); err != nil {
-		return fmt.Errorf("failed to write supervisor-off.md: %w", err)
+		return fmt.Errorf("failed to write command supervisor-off.md: %w", err)
 	}
 
 	return nil

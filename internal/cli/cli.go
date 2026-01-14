@@ -153,7 +153,6 @@ func parseSupervisorModeArgs(args []string) *SupervisorModeCommand {
 func ShowHelp(cfg *config.Config, cfgErr error) {
 	help := `Usage: ccc [provider] [args...]
        ccc validate [provider] [--all]
-       ccc supervisor-mode [on|off]
 
 Claude Code Supervisor and Configuration Switcher
 
@@ -163,7 +162,6 @@ Commands:
   ccc validate           Validate the current provider configuration
   ccc validate <provider>         Validate a specific provider configuration
   ccc validate --all              Validate all provider configurations
-  ccc supervisor-mode [on|off]    Enable or disable Supervisor mode (default: on)
   ccc --help             Show this help message
   ccc --version          Show version information
 
@@ -171,16 +169,10 @@ Environment Variables:
   CCC_CONFIG_DIR         Override the configuration directory (default: ~/.claude/)
 
 Supervisor Mode:
-  When enabled, ccc automatically runs a Supervisor check
-  after each Agent stop. The Supervisor reviews the work quality and provides
-  feedback if incomplete. Creates an action-feedback loop until the Supervisor
-  confirms task completion.
-
   Enable with slash command in Claude Code:
-    /supervisor
-
-  Or manually:
-    ccc supervisor-mode on
+    /supervisor ...
+  When enabled, ccc automatically runs a Supervisor check after each Agent stop.
+  The Supervisor reviews the work quality and provides feedback if incomplete.
 `
 	fmt.Print(help)
 
