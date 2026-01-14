@@ -120,12 +120,12 @@ func TestSwitchWithHook(t *testing.T) {
 		// Verify supervisor command files were created
 		commandsDir := config.GetDir() + "/commands"
 		supervisorOnPath := commandsDir + "/supervisor.md"
-		supervisorOffPath := commandsDir + "/supervisor-off.md"
+		supervisorOffPath := commandsDir + "/supervisoroff.md"
 		if _, err := os.Stat(supervisorOnPath); os.IsNotExist(err) {
 			t.Errorf("supervisor.md should exist at %s", supervisorOnPath)
 		}
 		if _, err := os.Stat(supervisorOffPath); os.IsNotExist(err) {
-			t.Errorf("supervisor-off.md should exist at %s", supervisorOffPath)
+			t.Errorf("supervisoroff.md should exist at %s", supervisorOffPath)
 		}
 	})
 

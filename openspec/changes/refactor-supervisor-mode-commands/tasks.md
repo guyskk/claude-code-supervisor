@@ -41,7 +41,7 @@
 ## 6. Provider 修改
 - [ ] 6.1 删除 `Switch()` 函数
 - [ ] 6.2 `SwitchWithHook()` 中增加创建 `~/.claude/commands/supervisor.md` 的逻辑
-- [ ] 6.3 `SwitchWithHook()` 中增加创建 `~/.claude/commands/supervisor-off.md` 的逻辑
+- [ ] 6.3 `SwitchWithHook()` 中增加创建 `~/.claude/commands/supervisoroff.md` 的逻辑
 - [ ] 6.4 每次调用都覆盖创建这两个文件
 - [ ] 6.5 更新 `provider_test.go`（去掉 `Switch()` 相关测试）
 

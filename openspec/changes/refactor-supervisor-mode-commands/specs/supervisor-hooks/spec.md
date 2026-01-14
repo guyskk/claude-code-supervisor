@@ -126,9 +126,9 @@ description: Enable supervisor mode
 $ARGUMENTS!`ccc supervisor-mode on`
 ```
 
-#### Scenario: supervisor-off.md 内容格式
+#### Scenario: supervisoroff.md 内容格式
 - **GIVEN** ccc 执行 `SwitchWithHook()`
-- **WHEN** 系统创建 `~/.claude/commands/supervisor-off.md`
+- **WHEN** 系统创建 `~/.claude/commands/supervisoroff.md`
 - **THEN** 文件内容应当为：
 ```markdown
 ---
@@ -145,8 +145,8 @@ $ARGUMENTS!`ccc supervisor-mode off`
 - **AND** state 文件的 `enabled` 字段应当被设为 `true`
 - **AND** 后续 Stop hook 将执行 Supervisor review
 
-#### Scenario: 用户使用 /supervisor-off 命令
-- **GIVEN** 用户在 Claude Code 中输入 `/supervisor-off`
+#### Scenario: 用户使用 /supervisoroff 命令
+- **GIVEN** 用户在 Claude Code 中输入 `/supervisoroff`
 - **WHEN** Claude Code 解析 slash command
 - **THEN** 应当执行 `ccc supervisor-mode off`
 - **AND** state 文件的 `enabled` 字段应当被设为 `false`

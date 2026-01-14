@@ -15,7 +15,7 @@
 - **ccc 启动时** 无论什么模式都设置 `CCC_SUPERVISOR_ID`（如果环境变量没有就新生成，否则复用）
 - **总是** 使用 `SwitchWithHook()` 生成带 Stop Hook 的 settings（不再需要普通模式的 `Switch()`）
 - **Hook 改为** 从 state 文件读取 `Enabled` 字段判断是否执行 Supervisor review
-- **每次 ccc 启动时** 都覆盖创建 `~/.claude/commands/supervisor.md` 和 `supervisor-off.md`
+- **每次 ccc 启动时** 都覆盖创建 `~/.claude/commands/supervisor.md` 和 `supervisoroff.md`
 - **为新增的 `supervisor-mode` 子命令编写单元测试**
 
 ## Impact

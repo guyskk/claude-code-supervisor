@@ -53,7 +53,7 @@
 - **AND** 应当将配置写入 `~/.claude/settings.json`
 - **AND** settings 中应当包含 `hooks.Stop` 配置
 - **AND** 应当创建 `~/.claude/commands/supervisor.md` 文件
-- **AND** 应当创建 `~/.claude/commands/supervisor-off.md` 文件
+- **AND** 应当创建 `~/.claude/commands/supervisoroff.md` 文件
 
 #### Scenario: 创建 supervisor.md 命令文件
 - **GIVEN** ccc 执行 `SwitchWithHook()`
@@ -62,10 +62,10 @@
 - **AND** 文件内容应当包含 frontmatter（description: Enable supervisor mode）
 - **AND** 文件内容应当包含命令 `$ARGUMENTS!`ccc supervisor-mode on``
 
-#### Scenario: 创建 supervisor-off.md 命令文件
+#### Scenario: 创建 supervisoroff.md 命令文件
 - **GIVEN** ccc 执行 `SwitchWithHook()`
 - **WHEN** 系统创建命令文件
-- **THEN** 应当创建 `~/.claude/commands/supervisor-off.md`
+- **THEN** 应当创建 `~/.claude/commands/supervisoroff.md`
 - **AND** 文件内容应当包含 frontmatter（description: Disable supervisor mode）
 - **AND** 文件内容应当包含命令 `$ARGUMENTS!`ccc supervisor-mode off``
 
