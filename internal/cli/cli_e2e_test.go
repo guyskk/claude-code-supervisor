@@ -494,10 +494,10 @@ func TestE2E_ValidateCommand(t *testing.T) {
 
 			// Check that we got some validation output
 			outputStr := string(output)
-			if !contains(outputStr, "test1") {
+			if !strings.Contains(outputStr, "test1") {
 				t.Errorf("Expected provider name 'test1' in output, got: %s", outputStr)
 			}
-			if !contains(outputStr, "Base URL") {
+			if !strings.Contains(outputStr, "Base URL") {
 				t.Errorf("Expected 'Base URL' in output, got: %s", outputStr)
 			}
 		})
@@ -652,25 +652,11 @@ func TestE2E_SupervisorConfigLoading(t *testing.T) {
 
 			// The validate command should run successfully with the config
 			// If there's a config parsing error, it would fail before validation
-			if !contains(outputStr, "test1") {
+			if !strings.Contains(outputStr, "test1") {
 				t.Errorf("Expected provider name 'test1' in output, got: %s", outputStr)
 			}
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > len(substr) && findInString(s, substr)))
-}
-
-func findInString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 // TestE2E_Launching tests provider launching with various flags

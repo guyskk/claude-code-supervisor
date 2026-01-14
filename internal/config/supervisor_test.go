@@ -3,7 +3,6 @@ package config
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
 )
 
@@ -85,39 +84,6 @@ func TestSupervisorConfig_Timeout(t *testing.T) {
 	if timeout != 300000000000 { // 300 seconds in nanoseconds
 		t.Errorf("Timeout() = %v, want 300s", timeout)
 	}
-}
-
-func TestLoadSupervisorConfig_EnvOverride(t *testing.T) {
-	// Save original env values
-	origEnabled := os.Getenv("CCC_SUPERVISOR")
-	origMaxIter := os.Getenv("CCC_SUPERVISOR_MAX_ITERATIONS")
-	origTimeout := os.Getenv("CCC_SUPERVISOR_TIMEOUT")
-
-	// Restore after test
-	defer func() {
-		if origEnabled == "" {
-			os.Unsetenv("CCC_SUPERVISOR")
-		} else {
-			os.Setenv("CCC_SUPERVISOR", origEnabled)
-		}
-		if origMaxIter == "" {
-			os.Unsetenv("CCC_SUPERVISOR_MAX_ITERATIONS")
-		} else {
-			os.Setenv("CCC_SUPERVISOR_MAX_ITERATIONS", origMaxIter)
-		}
-		if origTimeout == "" {
-			os.Unsetenv("CCC_SUPERVISOR_TIMEOUT")
-		} else {
-			os.Setenv("CCC_SUPERVISOR_TIMEOUT", origTimeout)
-		}
-	}()
-
-	// This test requires a valid config file to exist
-	// For now, we skip if config doesn't exist
-	t.Skip("requires valid ccc.json config file")
-
-	// Test cases for env override would go here
-	// Set env vars, call LoadSupervisorConfig, verify overrides
 }
 
 func TestSupervisorConfig_MarshalJSON(t *testing.T) {

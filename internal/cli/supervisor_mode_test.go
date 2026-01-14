@@ -4,6 +4,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/guyskk/ccc/internal/config"
@@ -145,7 +146,7 @@ func TestSupervisorMode_Integration(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error when CCC_SUPERVISOR_ID is not set")
 		}
-		if !containsString(err.Error(), "CCC_SUPERVISOR_ID") {
+		if !strings.Contains(err.Error(), "CCC_SUPERVISOR_ID") {
 			t.Errorf("error message should mention CCC_SUPERVISOR_ID, got: %v", err)
 		}
 	})
@@ -218,18 +219,4 @@ func TestSupervisorMode_HookIntegration(t *testing.T) {
 			t.Errorf("expected Enabled=false, got true")
 		}
 	})
-}
-
-func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > len(substr) && findInStringLocal(s, substr)))
-}
-
-func findInStringLocal(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
