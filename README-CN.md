@@ -42,9 +42,6 @@ OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed -e 's/x86_64/
       "defaultMode": "bypassPermissions"
     }
   },
-  "supervisor": {
-    "enabled": true
-  },
   "providers": {
     "glm": {
       "env": {
@@ -64,8 +61,7 @@ OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed -e 's/x86_64/
 }
 ```
 
-> **安全警告**：`bypassPermissions` 允许 Claude Code 无需确认即可执行工具。仅在受信任的环境中使用。  
-> **Tokens 消耗**：`supervisor.enabled` 开启 Supervisor 模式能显著提高任务完成度，但也会显著增加 Tokens 消耗量。
+> **安全警告**：`bypassPermissions` 允许 Claude Code 无需确认即可执行工具。仅在受信任的环境中使用。
 
 ### 3. 使用
 
@@ -99,21 +95,23 @@ ccc validate --all
 
 Supervisor 模式是 `ccc` 最有价值的特性。它会在 Agent 每次停止后自动审查工作质量，如果未完成则提供反馈让 Agent 继续执行。
 
-### 启用 Supervisor 模式
+### 如何使用
 
-**默认方式（配置文件）**：在 `ccc.json` 中设置 `supervisor.enabled: true`（参见上方快速开始）。
+1. 启动 `ccc` 并选择提供商：
+   ```bash
+   ccc glm
+   ```
 
-**临时覆盖**：使用 `CCC_SUPERVISOR` 环境变量临时覆盖配置：
+2. 与 Agent 沟通确认需求和方案
 
-```bash
-# 强制启用（即使配置中 enabled = false）
-export CCC_SUPERVISOR=1
-ccc
+3. 使用斜杠命令启用 Supervisor 模式：
+   ```
+   /supervisor 好，开始执行
+   ```
 
-# 强制禁用（即使配置中 enabled = true）
-export CCC_SUPERVISOR=0
-ccc
-```
+4. Agent 会执行任务，Supervisor 会在每次停止后自动审查
+   - 如果工作未完成，Supervisor 会提供反馈，Agent 继续执行
+   - 重复直到 Supervisor 确认工作完成
 
 ### 工作原理
 
@@ -122,6 +120,18 @@ ccc
 3. 如果工作未完成或质量不佳，Supervisor 提供反馈
 4. Agent 根据反馈继续工作
 5. 重复直到 Supervisor 确认工作完成
+
+### 手动控制
+
+你也可以手动启用/禁用 Supervisor 模式：
+
+```bash
+# 启用 Supervisor 模式
+ccc supervisor-mode on
+
+# 禁用 Supervisor 模式
+ccc supervisor-mode off
+```
 
 ## 配置说明
 
@@ -138,7 +148,6 @@ ccc
     "alwaysThinkingEnabled": true
   },
   "supervisor": {
-    "enabled": true,
     "max_iterations": 20,
     "timeout_seconds": 600
   },
@@ -191,11 +200,8 @@ ccc
 
 | 字段              | 说明                             | 默认值  |
 | ----------------- | -------------------------------- | ------- |
-| `enabled`         | 启用 Supervisor 模式             | `false` |
 | `max_iterations`  | 当前会话强制停止前的最大迭代次数 | `20`    |
 | `timeout_seconds` | 每次 supervisor 调用的超时时间   | `600`   |
-
-可通过 `CCC_SUPERVISOR=1` 环境变量覆盖 Supervisor 模式设置。
 
 ### 自定义 Supervisor 提示词
 
@@ -203,18 +209,13 @@ ccc
 
 ### 环境变量
 
-| 变量             | 说明                                           |
-| ---------------- | ---------------------------------------------- |
-| `CCC_CONFIG_DIR` | 覆盖配置目录（默认：`~/.claude/`）             |
-| `CCC_SUPERVISOR` | 启用 Supervisor 模式（`"1"` 启用，`"0"` 禁用） |
+| 变量             | 说明                                       |
+| ---------------- | ------------------------------------------ |
+| `CCC_CONFIG_DIR` | 覆盖配置目录（默认：`~/.claude/`）         |
 
 ```bash
 # 使用自定义配置目录调试
 CCC_CONFIG_DIR=./tmp ccc glm
-
-# 启用 Supervisor 模式
-export CCC_SUPERVISOR=1
-ccc glm
 ```
 
 ## 从源码构建

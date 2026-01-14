@@ -79,17 +79,17 @@ func RunSupervisorHook(opts *SupervisorHookCommand) error {
 	log := supervisor.NewSupervisorLogger(supervisorID)
 	logCurrentEnv(log)
 
-	// Get environment variables first
-	isSupervisorMode := os.Getenv("CCC_SUPERVISOR") == "1"
-	isSupervisorHook := os.Getenv("CCC_SUPERVISOR_HOOK") == "1"
-	// Check if this is a Supervisor's hook call (to avoid infinite loop):
-	// - When NOT in supervisor mode (!CCC_SUPERVISOR=1), output empty JSON to allow stop
-	// - When CCC_SUPERVISOR_HOOK=1 (called from supervisor itself), output empty JSON to allow stop
-	if !isSupervisorMode {
-		return supervisor.OutputDecision(log, true, "not in supervisor mode")
+	// Load state to check if supervisor mode is enabled
+	state, err := supervisor.LoadState(supervisorID)
+	if err != nil {
+		log.Warn("failed to load state, allowing stop", "error", err.Error())
+		return supervisor.OutputDecision(log, true, "failed to load state")
 	}
-	if isSupervisorHook {
-		return supervisor.OutputDecision(log, true, "called from supervisor hook")
+
+	// Check if supervisor mode is enabled
+	if !state.Enabled {
+		log.Debug("supervisor mode disabled, allowing stop", "enabled", state.Enabled)
+		return supervisor.OutputDecision(log, true, "supervisor mode disabled")
 	}
 
 	// Load supervisor configuration
@@ -218,9 +218,6 @@ func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout
 		WithForkSession(true).                                                                            // Fork the current session
 		WithResume(sessionID).                                                                            // Resume from specific session
 		WithSettingSources(types.SettingSourceUser, types.SettingSourceProject, types.SettingSourceLocal) // Load all setting sources
-
-	// Set environment variable to avoid infinite loop
-	opts.Env["CCC_SUPERVISOR_HOOK"] = "1"
 
 	log.Debug("SDK options",
 		"fork_session", "true",

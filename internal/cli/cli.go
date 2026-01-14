@@ -10,6 +10,7 @@ import (
 	"github.com/guyskk/ccc/internal/config"
 	"github.com/guyskk/ccc/internal/migration"
 	"github.com/guyskk/ccc/internal/provider"
+	"github.com/guyskk/ccc/internal/supervisor"
 	"github.com/guyskk/ccc/internal/validate"
 )
 
@@ -24,14 +25,16 @@ var BuildTime = "unknown"
 
 // Command represents a parsed CLI command.
 type Command struct {
-	Version            bool
-	Help               bool
-	Provider           string
-	ClaudeArgs         []string
-	Validate           bool
-	ValidateOpts       *ValidateCommand
-	SupervisorHook     bool
-	SupervisorHookOpts *SupervisorHookCommand
+	Version             bool
+	Help                bool
+	Provider            string
+	ClaudeArgs          []string
+	Validate            bool
+	ValidateOpts        *ValidateCommand
+	SupervisorHook      bool
+	SupervisorHookOpts  *SupervisorHookCommand
+	SupervisorMode      bool
+	SupervisorModeOpts  *SupervisorModeCommand
 }
 
 // ValidateCommand represents options for the validate command.
@@ -42,6 +45,11 @@ type ValidateCommand struct {
 
 type SupervisorHookCommand struct {
 	SessionId string // Can be empty
+}
+
+// SupervisorModeCommand represents options for the supervisor-mode command.
+type SupervisorModeCommand struct {
+	Enabled bool // true to enable, false to disable
 }
 
 // Parse parses command-line arguments.
@@ -62,6 +70,9 @@ func Parse(args []string) *Command {
 	} else if firstArg == "supervisor-hook" {
 		cmd.SupervisorHook = true
 		cmd.SupervisorHookOpts = parseSupervisorHookArgs(args[1:])
+	} else if firstArg == "supervisor-mode" {
+		cmd.SupervisorMode = true
+		cmd.SupervisorModeOpts = parseSupervisorModeArgs(args[1:])
 	} else if !strings.HasPrefix(firstArg, "-") {
 		cmd.Provider = firstArg
 		if len(args) > 1 {
@@ -114,25 +125,50 @@ func parseSupervisorHookArgs(args []string) *SupervisorHookCommand {
 	return opts
 }
 
+// parseSupervisorModeArgs parses arguments for the supervisor-mode command.
+// Arguments: on (enable), off (disable), or empty (default to on).
+func parseSupervisorModeArgs(args []string) *SupervisorModeCommand {
+	opts := &SupervisorModeCommand{
+		Enabled: true, // Default is enable
+	}
+
+	if len(args) == 0 {
+		return opts
+	}
+
+	// Parse the first positional argument
+	arg := args[0]
+	switch strings.ToLower(arg) {
+	case "on", "true", "1", "enable":
+		opts.Enabled = true
+	case "off", "false", "0", "disable":
+		opts.Enabled = false
+	// Default to true for any other value
+	}
+
+	return opts
+}
+
 // ShowHelp displays usage information.
 func ShowHelp(cfg *config.Config, cfgErr error) {
 	help := `Usage: ccc [provider] [args...]
        ccc validate [provider] [--all]
+       ccc supervisor-mode [on|off]
 
 Claude Code Supervisor and Configuration Switcher
 
 Commands:
-  ccc              Use the current provider (or the first provider if none is set)
-  ccc <provider>   Switch to the specified provider and run Claude Code
-  ccc validate     Validate the current provider configuration
-  ccc validate <provider>   Validate a specific provider configuration
-  ccc validate --all        Validate all provider configurations
-  ccc --help       Show this help message
-  ccc --version    Show version information
+  ccc                    Use the current provider (or the first provider if none is set)
+  ccc <provider>         Switch to the specified provider and run Claude Code
+  ccc validate           Validate the current provider configuration
+  ccc validate <provider>         Validate a specific provider configuration
+  ccc validate --all              Validate all provider configurations
+  ccc supervisor-mode [on|off]    Enable or disable Supervisor mode (default: on)
+  ccc --help             Show this help message
+  ccc --version          Show version information
 
 Environment Variables:
-  CCC_CONFIG_DIR     Override the configuration directory (default: ~/.claude/)
-  CCC_SUPERVISOR     Configure Supervisor mode (set "1" to enable, "0" to disable)
+  CCC_CONFIG_DIR         Override the configuration directory (default: ~/.claude/)
 
 Supervisor Mode:
   When enabled, ccc automatically runs a Supervisor check
@@ -140,9 +176,11 @@ Supervisor Mode:
   feedback if incomplete. Creates an action-feedback loop until the Supervisor
   confirms task completion.
 
-  Example:
-    export CCC_SUPERVISOR=1
-    ccc glm
+  Enable with slash command in Claude Code:
+    /supervisor
+
+  Or manually:
+    ccc supervisor-mode on
 `
 	fmt.Print(help)
 
@@ -176,6 +214,11 @@ func ShowVersion() {
 
 // Run executes the CLI command.
 func Run(cmd *Command) error {
+	// Handle supervisor-mode subcommand
+	if cmd.SupervisorMode {
+		return RunSupervisorMode(cmd.SupervisorModeOpts)
+	}
+
 	// Handle supervisor-hook subcommand
 	if cmd.SupervisorHook {
 		return RunSupervisorHook(cmd.SupervisorHookOpts)
@@ -224,14 +267,8 @@ func Run(cmd *Command) error {
 		return fmt.Errorf("no providers configured")
 	}
 
-	// Check if supervisor mode is enabled
-	supervisorCfg, err := config.LoadSupervisorConfig()
-	if err != nil {
-		return fmt.Errorf("failed to load supervisor config: %w", err)
-	}
-
-	// Run claude with the provider (handles both normal and supervisor mode)
-	return runClaude(cfg, providerName, cmd.ClaudeArgs, supervisorCfg.Enabled)
+	// Run claude with the provider
+	return runClaude(cfg, providerName, cmd.ClaudeArgs)
 }
 
 // runValidate executes the validate command.
@@ -287,6 +324,44 @@ func determineProvider(cmd *Command, cfg *config.Config) string {
 	}
 
 	return ""
+}
+
+// RunSupervisorMode executes the supervisor-mode subcommand.
+// It modifies the enabled state in the supervisor state file.
+func RunSupervisorMode(opts *SupervisorModeCommand) error {
+	// Get supervisor ID from environment variable
+	supervisorID := os.Getenv("CCC_SUPERVISOR_ID")
+	if supervisorID == "" {
+		return fmt.Errorf("CCC_SUPERVISOR_ID environment variable is required")
+	}
+
+	// Create logger for output
+	log := supervisor.NewSupervisorLogger(supervisorID)
+
+	// Load current state
+	state, err := supervisor.LoadState(supervisorID)
+	if err != nil {
+		log.Error("failed to load state", "error", err.Error())
+		return fmt.Errorf("failed to load state: %w", err)
+	}
+
+	// Update enabled state
+	state.Enabled = opts.Enabled
+
+	// Save state
+	if err := supervisor.SaveState(supervisorID, state); err != nil {
+		log.Error("failed to save state", "error", err.Error())
+		return fmt.Errorf("failed to save state: %w", err)
+	}
+
+	// Log success to stderr only
+	if opts.Enabled {
+		log.Info("supervisor mode enabled", "supervisor_id", supervisorID)
+	} else {
+		log.Info("supervisor mode disabled", "supervisor_id", supervisorID)
+	}
+
+	return nil
 }
 
 // Execute is the main entry point for the CLI.
