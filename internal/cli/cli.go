@@ -36,6 +36,8 @@ type Command struct {
 	SupervisorHookOpts *SupervisorHookCommand
 	SupervisorMode     bool
 	SupervisorModeOpts *SupervisorModeCommand
+	Patch              bool
+	PatchOpts          *PatchCommandOptions
 }
 
 // ValidateCommand represents options for the validate command.
@@ -51,6 +53,11 @@ type SupervisorHookCommand struct {
 // SupervisorModeCommand represents options for the supervisor-mode command.
 type SupervisorModeCommand struct {
 	Enabled bool // true to enable, false to disable
+}
+
+// PatchCommandOptions represents options for the patch command.
+type PatchCommandOptions struct {
+	Reset bool // --reset flag, true means restore original claude
 }
 
 // Parse parses command-line arguments.
@@ -81,6 +88,9 @@ func Parse(args []string) *Command {
 	} else if firstArg == "supervisor-mode" {
 		cmd.SupervisorMode = true
 		cmd.SupervisorModeOpts = parseSupervisorModeArgs(args[1:])
+	} else if firstArg == "patch" {
+		cmd.Patch = true
+		cmd.PatchOpts = parsePatchArgs(args[1:])
 	} else if !strings.HasPrefix(firstArg, "-") {
 		cmd.Provider = firstArg
 		if len(args) > 1 {
@@ -157,10 +167,29 @@ func parseSupervisorModeArgs(args []string) *SupervisorModeCommand {
 	return opts
 }
 
+// parsePatchArgs parses arguments for the patch command.
+func parsePatchArgs(args []string) *PatchCommandOptions {
+	opts := &PatchCommandOptions{}
+
+	fs := flag.NewFlagSet("patch", flag.ContinueOnError)
+	fs.Usage = func() {} // Suppress default usage output
+	reset := fs.Bool("reset", false, "restore original claude command")
+
+	if err := fs.Parse(args); err != nil {
+		// On parse error, return options with defaults
+		return opts
+	}
+
+	opts.Reset = *reset
+
+	return opts
+}
+
 // ShowHelp displays usage information.
 func ShowHelp(cfg *config.Config, cfgErr error) {
 	help := `Usage: ccc [provider] [args...]
        ccc validate [provider] [--all]
+       ccc patch [--reset]
 
 Claude Code Supervisor and Configuration Switcher
 
@@ -170,6 +199,8 @@ Commands:
   ccc validate           Validate the current provider configuration
   ccc validate <provider>         Validate a specific provider configuration
   ccc validate --all              Validate all provider configurations
+  ccc patch               Replace claude command with ccc (requires sudo)
+  ccc patch --reset       Restore original claude command (requires sudo)
   ccc --help             Show this help message
   ccc --version          Show version information
 
@@ -214,6 +245,11 @@ func ShowVersion() {
 
 // Run executes the CLI command.
 func Run(cmd *Command) error {
+	// Handle patch subcommand
+	if cmd.Patch {
+		return RunPatch(cmd.PatchOpts)
+	}
+
 	// Handle supervisor-mode subcommand
 	if cmd.SupervisorMode {
 		return RunSupervisorMode(cmd.SupervisorModeOpts)
