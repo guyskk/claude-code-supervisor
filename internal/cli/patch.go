@@ -72,7 +72,10 @@ func rollbackPatch(claudePath, cccClaudePath string) error {
 // 返回 error 表示操作失败
 func applyPatch(claudePath string) error {
 	// 生成 ccc-claude 路径
-	cccClaudePath := claudePath + ".real"
+	// 注意：必须与 checkAlreadyPatched 和 runReset 中的文件名一致
+	// 使用 ccc-claude（不是 .real 后缀）
+	dir := filepath.Dir(claudePath)
+	cccClaudePath := filepath.Join(dir, "ccc-claude")
 
 	// 步骤 1: 重命名 claude → ccc-claude
 	if err := os.Rename(claudePath, cccClaudePath); err != nil {
