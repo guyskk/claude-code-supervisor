@@ -121,6 +121,21 @@ Supervisor Mode is the most valuable feature of `ccc`. It automatically reviews 
 4. Agent continues with the feedback
 5. This repeats until Supervisor confirms the work is complete
 
+### supervisor-mode Command
+
+Query or set Supervisor Mode state (used in statusline scripts):
+
+```bash
+# Query status (outputs "on" or "off")
+ccc supervisor-mode
+
+# Enable
+ccc supervisor-mode on
+
+# Disable
+ccc supervisor-mode off
+```
+
 ## Configuration
 
 Config file location, default: `~/.claude/ccc.json`

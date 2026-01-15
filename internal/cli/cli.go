@@ -49,8 +49,9 @@ type SupervisorHookCommand struct {
 }
 
 // SupervisorModeCommand represents options for the supervisor-mode command.
+// Enabled is nil to query status, true to enable, false to disable.
 type SupervisorModeCommand struct {
-	Enabled bool // true to enable, false to disable
+	Enabled *bool // nil=query, true=enable, false=disable
 }
 
 // Parse parses command-line arguments.
@@ -134,10 +135,10 @@ func parseSupervisorHookArgs(args []string) *SupervisorHookCommand {
 }
 
 // parseSupervisorModeArgs parses arguments for the supervisor-mode command.
-// Arguments: on (enable), off (disable), or empty (default to on).
+// Arguments: on (enable), off (disable), or empty (query status).
 func parseSupervisorModeArgs(args []string) *SupervisorModeCommand {
 	opts := &SupervisorModeCommand{
-		Enabled: true, // Default is enable
+		Enabled: nil, // Default is nil (query status)
 	}
 
 	if len(args) == 0 {
@@ -148,11 +149,13 @@ func parseSupervisorModeArgs(args []string) *SupervisorModeCommand {
 	arg := args[0]
 	switch strings.ToLower(arg) {
 	case "on", "true", "1", "enable":
-		opts.Enabled = true
+		val := true
+		opts.Enabled = &val
 	case "off", "false", "0", "disable":
-		opts.Enabled = false
-		// Default to true for any other value
+		val := false
+		opts.Enabled = &val
 	}
+	// Invalid arguments are ignored, treating as query (Enabled stays nil)
 
 	return opts
 }
@@ -292,7 +295,7 @@ func (a *configAdapter) CurrentProvider() string {
 }
 
 // RunSupervisorMode executes the supervisor-mode subcommand.
-// It modifies the enabled state in the supervisor state file.
+// It queries or modifies the enabled state in the supervisor state file.
 func RunSupervisorMode(opts *SupervisorModeCommand) error {
 	// Get supervisor ID from environment variable
 	supervisorID := os.Getenv("CCC_SUPERVISOR_ID")
@@ -300,27 +303,33 @@ func RunSupervisorMode(opts *SupervisorModeCommand) error {
 		return fmt.Errorf("CCC_SUPERVISOR_ID environment variable is required")
 	}
 
-	// Create logger for output
-	log := supervisor.NewSupervisorLogger(supervisorID)
-
 	// Load current state
 	state, err := supervisor.LoadState(supervisorID)
 	if err != nil {
-		log.Error("failed to load state", "error", err.Error())
 		return fmt.Errorf("failed to load state: %w", err)
 	}
 
+	// If Enabled is nil, query status (output to stdout)
+	if opts.Enabled == nil {
+		if state.Enabled {
+			fmt.Println("on")
+		} else {
+			fmt.Println("off")
+		}
+		return nil
+	}
+
 	// Update enabled state
-	state.Enabled = opts.Enabled
+	state.Enabled = *opts.Enabled
 
 	// Save state
 	if err := supervisor.SaveState(supervisorID, state); err != nil {
-		log.Error("failed to save state", "error", err.Error())
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 
 	// Log success to stderr only
-	if opts.Enabled {
+	log := supervisor.NewSupervisorLogger(supervisorID)
+	if *opts.Enabled {
 		log.Info("supervisor mode enabled", "supervisor_id", supervisorID)
 	} else {
 		log.Info("supervisor mode disabled", "supervisor_id", supervisorID)

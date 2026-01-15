@@ -121,6 +121,21 @@ Supervisor 模式是 `ccc` 最有价值的特性。它会在 Agent 每次停止�
 4. Agent 根据反馈继续工作
 5. 重复直到 Supervisor 确认工作完成
 
+### supervisor-mode 命令
+
+查询或设置 Supervisor 模式状态（用于 statusline 脚本）：
+
+```bash
+# 查询状态（输出 "on" 或 "off"）
+ccc supervisor-mode
+
+# 启用
+ccc supervisor-mode on
+
+# 禁用
+ccc supervisor-mode off
+```
+
 ## 配置说明
 
 配置文件位置，默认为：`~/.claude/ccc.json`
