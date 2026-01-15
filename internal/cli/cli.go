@@ -42,6 +42,8 @@ type Command struct {
 type ValidateCommand struct {
 	Provider    string // Empty means current provider
 	ValidateAll bool
+	JSONOutput  bool // Enable JSON output format
+	JSONPretty  bool // Enable pretty-printed JSON output
 }
 
 type SupervisorHookCommand struct {
@@ -99,6 +101,8 @@ func parseValidateArgs(args []string) *ValidateCommand {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	fs.Usage = func() {} // Suppress default usage output
 	all := fs.Bool("all", false, "validate all providers")
+	jsonOutput := fs.Bool("json", false, "output in JSON format")
+	jsonPretty := fs.Bool("pretty", false, "pretty-print JSON output")
 
 	if err := fs.Parse(args); err != nil {
 		// On parse error, return options with defaults
@@ -106,6 +110,8 @@ func parseValidateArgs(args []string) *ValidateCommand {
 	}
 
 	opts.ValidateAll = *all
+	opts.JSONOutput = *jsonOutput
+	opts.JSONPretty = *jsonPretty
 
 	// Get remaining arguments as positional args
 	remaining := fs.Args()
@@ -160,7 +166,7 @@ func parseSupervisorModeArgs(args []string) *SupervisorModeCommand {
 // ShowHelp displays usage information.
 func ShowHelp(cfg *config.Config, cfgErr error) {
 	help := `Usage: ccc [provider] [args...]
-       ccc validate [provider] [--all]
+       ccc validate [provider] [--all] [--json] [--pretty]
 
 Claude Code Supervisor and Configuration Switcher
 
@@ -170,6 +176,8 @@ Commands:
   ccc validate           Validate the current provider configuration
   ccc validate <provider>         Validate a specific provider configuration
   ccc validate --all              Validate all provider configurations
+  ccc validate --json             Output validation results in JSON format
+  ccc validate --json --pretty    Output formatted JSON
   ccc --help             Show this help message
   ccc --version          Show version information
 
@@ -273,6 +281,8 @@ func runValidate(cfg *config.Config, opts *ValidateCommand) error {
 	validateOpts := &validate.RunOptions{
 		Provider:    opts.Provider,
 		ValidateAll: opts.ValidateAll,
+		JSONOutput:  opts.JSONOutput,
+		JSONPretty:  opts.JSONPretty,
 	}
 
 	return validate.Run(cfgAdapter, validateOpts)

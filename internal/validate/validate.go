@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -377,10 +378,123 @@ func PrintSummary(summary *ValidationSummary) {
 	}
 }
 
+// JSONValidationResult 用于 JSON 输出的验证结果结构体
+type JSONValidationResult struct {
+	Valid     bool   `json:"valid"`
+	Provider  string `json:"provider"`
+	BaseURL   string `json:"base_url,omitempty"`
+	Model     string `json:"model,omitempty"`
+	APIStatus string `json:"api_status,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// JSONError 用于 JSON 错误输出的结构体
+type JSONError struct {
+	Error              string   `json:"error"`
+	AvailableProviders []string `json:"available_providers,omitempty"`
+}
+
+// printResultJSON 输出单个验证结果的 JSON 格式
+func printResultJSON(result *ValidationResult, pretty bool) error {
+	jsonResult := &JSONValidationResult{
+		Valid:    result.Valid,
+		Provider: result.Provider,
+		BaseURL:  result.BaseURL,
+		Model:    result.Model,
+	}
+
+	if result.Valid {
+		if result.APIStatus != "" {
+			jsonResult.APIStatus = result.APIStatus
+		}
+	} else {
+		// 构建错误消息
+		if len(result.Errors) > 0 {
+			jsonResult.Error = result.Errors[0]
+		}
+	}
+
+	var data []byte
+	var err error
+	if pretty {
+		data, err = json.MarshalIndent(jsonResult, "", "  ")
+	} else {
+		data, err = json.Marshal(jsonResult)
+	}
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(data))
+	return nil
+}
+
+// printErrorJSON 输出错误信息的 JSON 格式
+func printErrorJSON(err error, availableProviders []string, pretty bool) error {
+	jsonErrObj := &JSONError{
+		Error: err.Error(),
+	}
+	if len(availableProviders) > 0 {
+		jsonErrObj.AvailableProviders = availableProviders
+	}
+
+	var data []byte
+	var marshalErr error
+	if pretty {
+		data, marshalErr = json.MarshalIndent(jsonErrObj, "", "  ")
+	} else {
+		data, marshalErr = json.Marshal(jsonErrObj)
+	}
+	if marshalErr != nil {
+		return marshalErr
+	}
+
+	fmt.Fprintln(os.Stderr, string(data))
+	return nil
+}
+
+// printSummaryJSON 输出所有提供商验证结果的 JSON 数组格式
+func printSummaryJSON(summary *ValidationSummary, pretty bool) error {
+	results := make([]JSONValidationResult, len(summary.Results))
+	for i, r := range summary.Results {
+		results[i] = JSONValidationResult{
+			Valid:    r.Valid,
+			Provider: r.Provider,
+			BaseURL:  r.BaseURL,
+			Model:    r.Model,
+		}
+		if r.Valid {
+			if r.APIStatus != "" {
+				results[i].APIStatus = r.APIStatus
+			}
+		} else {
+			if len(r.Errors) > 0 {
+				results[i].Error = r.Errors[0]
+			}
+		}
+	}
+
+	var data []byte
+	var err error
+	if pretty {
+		data, err = json.MarshalIndent(results, "", "  ")
+	} else {
+		data, err = json.Marshal(results)
+	}
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(data))
+	return nil
+}
+
 // RunOptions represents the options for running validation.
 type RunOptions struct {
 	Provider    string // Empty means current provider
 	ValidateAll bool
+	JSONOutput  bool // Enable JSON output format
+	JSONPretty  bool // Enable pretty-printed JSON output
 }
 
 // Run executes the validation command with the given options.
@@ -388,18 +502,28 @@ func Run(cfg Config, opts *RunOptions) error {
 	// Handle validate all
 	if opts.ValidateAll {
 		if len(cfg.Providers()) == 0 {
+			if opts.JSONOutput {
+				return printErrorJSON(fmt.Errorf("no providers configured"), nil, opts.JSONPretty)
+			}
 			fmt.Println("No providers configured")
 			return nil
 		}
 
-		fmt.Printf("Validating %d provider(s)...\n\n", len(cfg.Providers()))
+		if !opts.JSONOutput {
+			fmt.Printf("Validating %d provider(s)...\n\n", len(cfg.Providers()))
+		}
 		summary := ValidateAllProviders(cfg)
 
-		for _, result := range summary.Results {
-			PrintResult(result)
+		if opts.JSONOutput {
+			if err := printSummaryJSON(summary, opts.JSONPretty); err != nil {
+				return err
+			}
+		} else {
+			for _, result := range summary.Results {
+				PrintResult(result)
+			}
+			PrintSummary(summary)
 		}
-
-		PrintSummary(summary)
 
 		// Return error if any provider is invalid or API test failed
 		if summary.Invalid > 0 {
@@ -418,6 +542,13 @@ func Run(cfg Config, opts *RunOptions) error {
 	}
 
 	if providerName == "" {
+		var providers []string
+		for name := range cfg.Providers() {
+			providers = append(providers, name)
+		}
+		if opts.JSONOutput {
+			return printErrorJSON(fmt.Errorf("no provider specified"), providers, opts.JSONPretty)
+		}
 		fmt.Println("No current provider set")
 		if len(cfg.Providers()) > 0 {
 			fmt.Println("\nAvailable providers:")
@@ -429,7 +560,13 @@ func Run(cfg Config, opts *RunOptions) error {
 	}
 
 	result := ValidateProvider(cfg, providerName)
-	PrintResult(result)
+	if opts.JSONOutput {
+		if err := printResultJSON(result, opts.JSONPretty); err != nil {
+			return err
+		}
+	} else {
+		PrintResult(result)
+	}
 
 	if !result.Valid {
 		return fmt.Errorf("provider '%s' is invalid", providerName)
