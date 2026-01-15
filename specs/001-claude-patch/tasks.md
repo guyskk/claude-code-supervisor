@@ -126,7 +126,7 @@
 - [X] T035 更新 `ShowHelp` 函数，添加 patch 命令的帮助信息
 - [X] T036 运行 `./check.sh --all` 执行完整检查（lint、test、build）
 - [ ] T037 根据 quickstart.md 中的验证场景进行手动测试
-- [ ] T038 更新 README.md（如有需要），添加 patch 功能说明
+- [X] T038 更新 README.md（如有需要），添加 patch 功能说明
 
 ---
 
