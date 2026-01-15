@@ -1,28 +1,36 @@
-# [PROJECT NAME] Development Guidelines
+# [项目名称] 开发指南
 
-Auto-generated from all feature plans. Last updated: [DATE]
+自动生成于所有功能方案。最后更新：[DATE]
 
-## Active Technologies
+## 特别说明：使用中文
 
-[EXTRACTED FROM ALL PLAN.MD FILES]
+**本文档必须使用中文编写。**
 
-## Project Structure
+1. 所有技术描述、架构决策、实现细节必须使用中文。
+2. 代码示例中的注释必须使用中文。
+3. 变量名、函数名等标识符使用英文，但说明文字使用中文。
+
+## 使用的技术
+
+[从所有 plan.md 文件中提取]
+
+## 项目结构
 
 ```text
-[ACTUAL STRUCTURE FROM PLANS]
+[从方案中提取的实际结构]
 ```
 
-## Commands
+## 命令
 
-[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES]
+[仅针对使用中的技术]
 
-## Code Style
+## 代码风格
 
-[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE]
+[特定语言，仅针对正在使用的语言]
 
-## Recent Changes
+## 最近变更
 
-[LAST 3 FEATURES AND WHAT THEY ADDED]
+[最近 3 个功能及其添加内容]
 
-<!-- MANUAL ADDITIONS START -->
-<!-- MANUAL ADDITIONS END -->
+<!-- 手动添加开始 -->
+<!-- 手动添加结束 -->

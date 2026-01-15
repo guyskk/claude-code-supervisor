@@ -1,5 +1,6 @@
 ---
 description: Create or update the project constitution from interactive or provided principle inputs, ensuring all dependent templates stay in sync.
+language_note: **IMPORTANT**: All constitution content and principles MUST be in Chinese.
 handoffs: 
   - label: Build Specification
     agent: speckit.specify

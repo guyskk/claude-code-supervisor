@@ -1,5 +1,6 @@
 ---
 description: Identify underspecified areas in the current feature spec by asking up to 5 highly targeted clarification questions and encoding answers back into the spec.
+language_note: **IMPORTANT**: All clarification questions and responses MUST be in Chinese.
 handoffs: 
   - label: Build Technical Plan
     agent: speckit.plan

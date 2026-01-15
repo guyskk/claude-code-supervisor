@@ -1,5 +1,6 @@
 ---
 description: Generate a custom checklist for the current feature based on user requirements.
+language_note: **IMPORTANT**: All checklist items and descriptions MUST be in Chinese.
 ---
 
 ## Checklist Purpose: "Unit Tests for English"

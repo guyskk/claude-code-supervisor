@@ -1,5 +1,6 @@
 ---
 description: Convert existing tasks into actionable, dependency-ordered GitHub issues for the feature based on available design artifacts.
+language_note: **IMPORTANT**: All GitHub issue titles and descriptions MUST be in Chinese.
 tools: ['github/github-mcp-server/issue_write']
 ---
 
