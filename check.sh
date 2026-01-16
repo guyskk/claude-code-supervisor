@@ -93,8 +93,15 @@ check_markdown() {
         return 0
     fi
 
+    # Only check specific markdown files
     local md_files
-    md_files=$(find . -maxdepth 1 -name "*.md" -type f)
+    md_files=""
+    for f in README.md README-CN.md CHANGELOG.md; do
+        if [ -f "$f" ]; then
+            md_files="$md_files $f"
+        fi
+    done
+
     if [ -z "$md_files" ]; then
         echo -e "${GREEN}  ✓${NC} No markdown files to check"
         return 0

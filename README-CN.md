@@ -91,126 +91,6 @@ ccc validate
 ccc validate --all
 ```
 
-## Patch 命令：用 ccc 替代 `claude` 命令
-
-通过替换系统中的 `claude` 命令，让 `ccc` 成为你的默认 Claude Code。
-
-### 用法
-
-```bash
-# 用 ccc 替换 claude 命令（需要 sudo 权限）
-sudo ccc patch
-
-# 替换后，`claude` 命令现在会调用 ccc
-claude --help    # 显示 ccc 的帮助信息
-
-# 恢复原始 claude 命令
-sudo ccc patch --reset
-```
-
-### 技术细节
-
-1. **Patch**：将你的 `claude` 二进制文件重命名为 `ccc-claude`，并在原位置创建一个包装脚本
-2. **包装脚本**：设置 `CCC_CLAUDE` 环境变量并执行 `ccc`
-3. **ccc 内部机制**：ccc 使用 `CCC_CLAUDE` 来调用真实的 claude 二进制文件，避免递归调用
-
-### 优势
-
-- 任何调用 `claude` 的脚本或工具现在都会使用配置了提供商的 ccc
-- ccc 的 Supervisor 模式和提供商切换成为默认行为
-- 无需修改 PATH 或 shell 配置
-- 使用 `--reset` 标志轻松恢复
-
-### 使用示例
-
-```bash
-# Patch 前：claude 调用 Anthropic 的 claude
-claude --help
-
-# 应用 patch
-sudo ccc patch
-# 输出：Patched successfully
-#       Claude command now uses ccc
-
-# Patch 后：claude 现在调用 ccc
-claude --help    # 显示 ccc 帮助信息和你的提供商
-claude glm       # 使用 ccc 并切换到 GLM 提供商
-
-# 直接调用 ccc 仍然有效
-ccc --help       # 显示 ccc 帮助信息
-ccc kimi         # 使用 ccc 并切换到 Kimi 提供商
-
-# 需要时恢复
-sudo ccc patch --reset
-# 输出：Reset successfully
-#       Claude command restored to original
-```
-
-### 使用要求
-
-- **sudo 权限**：patch 需要对 claude 二进制文件所在位置的写权限（通常是 `/usr/local/bin`）
-- **claude 在 PATH 中**：`claude` 命令必须可以通过 `PATH` 发现
-- **仅支持 macOS/Linux**：不支持 Windows
-
-### 故障排查
-
-#### 权限被拒绝
-
-```bash
-# 错误："failed to rename claude: permission denied"
-# 解决方案：确保使用 sudo
-sudo ccc patch
-```
-
-#### 找不到 claude
-
-```bash
-# 错误："claude not found in PATH"
-# 解决方案：验证 claude 已安装并在 PATH 中
-which claude
-# 预期输出：/usr/local/bin/claude（或类似路径）
-```
-
-#### 已经应用过 patch
-
-```bash
-# 执行：sudo ccc patch
-# 输出："Already patched"
-# 这是正常现象 - patch 是幂等的
-```
-
-#### 手动清理（如果 patch 失败）
-
-如果 patch 中途失败，手动恢复：
-
-```bash
-# 查找真实的 claude 二进制文件
-ls -la /usr/local/bin/claude*
-
-# 如果 ccc-claude.real 存在，恢复它
-sudo mv /usr/local/bin/ccc-claude.real /usr/local/bin/claude
-
-# 或删除损坏的包装脚本
-sudo rm /usr/local/bin/claude
-```
-
-#### 验证 patch 状态
-
-```bash
-# 检查 ccc-claude.real 是否存在
-ls -la /usr/local/bin/claude*
-
-# 检查 claude 是什么
-cat $(which claude)
-# 如果已 patch，会显示包含 CCC_CLAUDE 的包装脚本
-```
-
-### 限制
-
-- **符号链接**：如果 `claude` 是符号链接，patch 会重命名符号链接本身
-- **并发执行**：不支持同时在多个终端运行 patch
-- **版本更新**：更新 claude 后可能需要重新执行 patch
-
 ## Supervisor 模式（推荐）
 
 Supervisor 模式是 `ccc` 最有价值的特性。它会在 Agent 每次停止后自动审查工作质量，如果未完成则提供反馈让 Agent 继续执行。
@@ -241,19 +121,27 @@ Supervisor 模式是 `ccc` 最有价值的特性。它会在 Agent 每次停止�
 4. Agent 根据反馈继续工作
 5. 重复直到 Supervisor 确认工作完成
 
-### supervisor-mode 命令
+### Statusline显示
 
-查询或设置 Supervisor 模式状态（用于 statusline 脚本）：
+可以在Claude code里输入以下指令，帮你配置好Statusline显示。
+
+```
+/statusline 帮我配置statusline脚本，里面调用 `ccc supervisor-mode` 命令，这个命令会输出 on 或者 off，我希望显示成类似 ... | supervisor on 这样的效果。
+```
+
+## Patch 命令：用 ccc 替代 `claude` 命令
+
+通过替换系统中的 `claude` 命令，让任何调用 `claude` 的工具都使用配置了提供商的 `ccc` 命令。
 
 ```bash
-# 查询状态（输出 "on" 或 "off"）
-ccc supervisor-mode
+# 用 ccc 替换 claude 命令（需要 sudo 权限）
+sudo ccc patch
 
-# 启用
-ccc supervisor-mode on
+# 替换后，`claude` 命令现在会调用 ccc
+claude --help    # 显示 ccc 的帮助信息
 
-# 禁用
-ccc supervisor-mode off
+# 恢复原始 claude 命令
+sudo ccc patch --reset
 ```
 
 ## 配置说明
