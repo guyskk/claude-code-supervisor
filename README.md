@@ -91,126 +91,6 @@ ccc validate
 ccc validate --all
 ```
 
-## Patch Command: Replace `claude` with `ccc`
-
-Make `ccc` your default Claude Code by replacing the system `claude` command.
-
-### Usage
-
-```bash
-# Replace claude command with ccc (requires sudo)
-sudo ccc patch
-
-# After patching, `claude` command now uses ccc
-claude --help    # Shows ccc help
-
-# Restore original claude command
-sudo ccc patch --reset
-```
-
-### Technical Details
-
-1. **Patch**: Renames your `claude` binary to `ccc-claude` and creates a wrapper script at the original `claude` location
-2. **Wrapper Script**: Sets `CCC_CLAUDE` environment variable and executes `ccc`
-3. **ccc Internals**: ccc uses `CCC_CLAUDE` to call the real claude binary, avoiding recursive calls
-
-### Benefits
-
-- Any script or tool that calls `claude` will now use `ccc` with your configured providers
-- ccc's Supervisor mode and provider switching become the default
-- No PATH or shell configuration changes needed
-- Easy to restore with `--reset` flag
-
-### Example Session
-
-```bash
-# Before patch: claude calls Anthropic's claude
-claude --help
-
-# Apply patch
-sudo ccc patch
-# Output: Patched successfully
-#         Claude command now uses ccc
-
-# After patch: claude now calls ccc
-claude --help    # Shows ccc help with your providers
-claude glm       # Uses ccc with GLM provider
-
-# Direct ccc calls still work
-ccc --help       # Shows ccc help
-ccc kimi         # Uses ccc with Kimi provider
-
-# Restore when needed
-sudo ccc patch --reset
-# Output: Reset successfully
-#         Claude command restored to original
-```
-
-### Requirements
-
-- **sudo权限**: Patch requires write access to the claude binary location (typically `/usr/local/bin`)
-- **claude in PATH**: The `claude` command must be discoverable via `PATH`
-- **macOS/Linux only**: Windows is not supported
-
-### Troubleshooting
-
-#### Permission denied
-
-```bash
-# Error: "failed to rename claude: permission denied"
-# Solution: Make sure you're using sudo
-sudo ccc patch
-```
-
-#### Claude not found
-
-```bash
-# Error: "claude not found in PATH"
-# Solution: Verify claude is installed and in your PATH
-which claude
-# Expected: /usr/local/bin/claude (or similar)
-```
-
-#### Patch already applied
-
-```bash
-# Running: sudo ccc patch
-# Output: "Already patched"
-# This is normal - patch is idempotent
-```
-
-#### Manual cleanup (if patch fails)
-
-If patch fails partway through, manually restore:
-
-```bash
-# Find the real claude binary
-ls -la /usr/local/bin/claude*
-
-# If ccc-claude exists, restore it
-sudo mv /usr/local/bin/ccc-claude.real /usr/local/bin/claude
-
-# Or remove the wrapper if it's corrupted
-sudo rm /usr/local/bin/claude
-```
-
-#### Verify patch status
-
-```bash
-# Check if ccc-claude.real exists
-ls -la /usr/local/bin/claude*
-
-# Check what claude is
-cat $(which claude)
-# If patched, shows wrapper script with CCC_CLAUDE
-```
-
-### Limitations
-
-- **Symbolic links**: If `claude` is a symlink, patch will rename the symlink itself
-- **Concurrent execution**: Running patch in multiple terminals simultaneously is not supported
-- **Version updates**: Updating claude may require re-patching after installation
-
 ## Supervisor Mode (Recommended)
 
 Supervisor Mode is the most valuable feature of `ccc`. It automatically reviews the Agent's work after each stop and provides feedback if incomplete.
@@ -241,19 +121,27 @@ Supervisor Mode is the most valuable feature of `ccc`. It automatically reviews 
 4. Agent continues with the feedback
 5. This repeats until Supervisor confirms the work is complete
 
-### supervisor-mode Command
+### Statusline Display
 
-Query or set Supervisor Mode state (used in statusline scripts):
+You can configure the statusline in Claude Code to show Supervisor Mode status:
+
+```text
+/statusline Help me configure a statusline script that calls `ccc supervisor-mode` command, which outputs "on" or "off". I want it to display like "... | supervisor on"
+```
+
+## Patch Command: Replace `claude` with `ccc`
+
+Make `ccc` your default Claude Code by replacing the system `claude` command.
 
 ```bash
-# Query status (outputs "on" or "off")
-ccc supervisor-mode
+# Replace claude command with ccc (requires sudo)
+sudo ccc patch
 
-# Enable
-ccc supervisor-mode on
+# After patching, `claude` command now uses ccc
+claude --help    # Shows ccc help
 
-# Disable
-ccc supervisor-mode off
+# Restore original claude command
+sudo ccc patch --reset
 ```
 
 ## Configuration
