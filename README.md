@@ -138,10 +138,10 @@ Supervisor Mode is the most valuable feature of `ccc`. It automatically reviews 
 
 ### Statusline Display
 
-You can configure the statusline in Claude Code with the following command:
+You can configure the statusline in Claude Code to show Supervisor Mode status:
 
 ```text
-/statusline 帮我配置statusline脚本，里面调用 `ccc supervisor-mode` 命令，这个命令会输出 on 或者 off，我希望显示成类似 ... | supervisor on 这样的效果。
+/statusline Help me configure a statusline script that calls `ccc supervisor-mode` command, which outputs "on" or "off". I want it to display like "... | supervisor on"
 ```
 
 ## Configuration
