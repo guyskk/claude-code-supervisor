@@ -91,21 +91,6 @@ ccc validate
 ccc validate --all
 ```
 
-## Patch Command: Replace `claude` with `ccc`
-
-Make `ccc` your default Claude Code by replacing the system `claude` command.
-
-```bash
-# Replace claude command with ccc (requires sudo)
-sudo ccc patch
-
-# After patching, `claude` command now uses ccc
-claude --help    # Shows ccc help
-
-# Restore original claude command
-sudo ccc patch --reset
-```
-
 ## Supervisor Mode (Recommended)
 
 Supervisor Mode is the most valuable feature of `ccc`. It automatically reviews the Agent's work after each stop and provides feedback if incomplete.
@@ -142,6 +127,21 @@ You can configure the statusline in Claude Code to show Supervisor Mode status:
 
 ```text
 /statusline Help me configure a statusline script that calls `ccc supervisor-mode` command, which outputs "on" or "off". I want it to display like "... | supervisor on"
+```
+
+## Patch Command: Replace `claude` with `ccc`
+
+Make `ccc` your default Claude Code by replacing the system `claude` command.
+
+```bash
+# Replace claude command with ccc (requires sudo)
+sudo ccc patch
+
+# After patching, `claude` command now uses ccc
+claude --help    # Shows ccc help
+
+# Restore original claude command
+sudo ccc patch --reset
 ```
 
 ## Configuration
