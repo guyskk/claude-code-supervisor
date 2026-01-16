@@ -127,9 +127,9 @@ func TestGetDefaultSupervisorPrompt(t *testing.T) {
 			t.Errorf("getDefaultSupervisorPrompt() source = %q, want %q", source, "supervisor_prompt_default")
 		}
 		// Check that key parts are present (prompt is in Chinese)
-		// The prompt uses "审查者" (reviewer) instead of "Supervisor"
-		if !strings.Contains(prompt, "审查者") && !strings.Contains(prompt, "Supervisor") {
-			t.Error("getDefaultSupervisorPrompt() missing '审查者' or 'Supervisor'")
+		// The prompt uses role keywords like "监督者" (supervisor), "审查者" (reviewer), or "Supervisor"
+		if !strings.Contains(prompt, "监督者") && !strings.Contains(prompt, "审查者") && !strings.Contains(prompt, "Supervisor") {
+			t.Error("getDefaultSupervisorPrompt() missing role keyword ('监督者', '审查者', or 'Supervisor')")
 		}
 		if !strings.Contains(prompt, "allow_stop") {
 			t.Error("getDefaultSupervisorPrompt() missing 'allow_stop'")
@@ -142,7 +142,7 @@ func TestGetDefaultSupervisorPrompt(t *testing.T) {
 			t.Error("getDefaultSupervisorPrompt() should mention JSON format")
 		}
 		// Check for key sections in the Chinese prompt
-		if !strings.Contains(prompt, "暂停当前") && !strings.Contains(prompt, "审查框架") {
+		if !strings.Contains(prompt, "停止任务") && !strings.Contains(prompt, "审查框架") && !strings.Contains(prompt, "审查思维") {
 			t.Error("getDefaultSupervisorPrompt() should contain key sections")
 		}
 	})
@@ -177,7 +177,7 @@ func TestGetDefaultSupervisorPrompt(t *testing.T) {
 			t.Errorf("getDefaultSupervisorPrompt() source = %q, want %q", source, "supervisor_prompt_default")
 		}
 		// Should use default prompt (contains Chinese keywords)
-		if !strings.Contains(prompt, "审查者") && !strings.Contains(prompt, "Supervisor") {
+		if !strings.Contains(prompt, "监督者") && !strings.Contains(prompt, "审查者") && !strings.Contains(prompt, "Supervisor") {
 			t.Error("getDefaultSupervisorPrompt() should use default prompt when custom file is empty")
 		}
 	})
@@ -196,7 +196,7 @@ func TestGetDefaultSupervisorPrompt(t *testing.T) {
 			t.Errorf("getDefaultSupervisorPrompt() source = %q, want %q", source, "supervisor_prompt_default")
 		}
 		// Should use default prompt
-		if !strings.Contains(prompt, "审查者") && !strings.Contains(prompt, "Supervisor") {
+		if !strings.Contains(prompt, "监督者") && !strings.Contains(prompt, "审查者") && !strings.Contains(prompt, "Supervisor") {
 			t.Error("getDefaultSupervisorPrompt() should use default prompt when custom file is whitespace-only")
 		}
 	})

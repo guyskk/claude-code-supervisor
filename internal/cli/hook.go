@@ -181,14 +181,6 @@ func RunSupervisorHook(opts *SupervisorHookCommand) error {
 		return supervisor.OutputDecision(log, true, "no supervisor result found")
 	}
 
-	// Log the result (only once, in addition to raw message log)
-	resultJSON, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		log.Warn("failed to marshal result for logging", "error", err.Error())
-	} else {
-		log.Info("supervisor result", "result", string(resultJSON))
-	}
-
 	if result.AllowStop {
 		log.Info("work satisfactory, allowing stop")
 		// Ensure feedback is not empty when allowing stop
@@ -200,7 +192,7 @@ func RunSupervisorHook(opts *SupervisorHookCommand) error {
 	}
 
 	// Block with feedback
-	log.Info("work not satisfactory, agent will continue", "feedback", result.Feedback)
+	log.Info("work not satisfactory, agent will continue")
 	return supervisor.OutputDecision(log, false, result.Feedback)
 }
 
@@ -283,8 +275,6 @@ func runSupervisorWithSDK(ctx context.Context, sessionID, prompt string, timeout
 
 	// Parse JSON from Result field using llmparser
 	resultText := *resultMessage.Result
-	log.Debug("parsing JSON from result field", "result_text", resultText)
-
 	result := parseResultJSON(resultText)
 
 	return result, nil
