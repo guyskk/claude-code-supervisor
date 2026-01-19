@@ -2,6 +2,9 @@ package validate
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -697,4 +700,121 @@ func ExampleValidateAllProviders() {
 	summary := ValidateAllProviders(config)
 	fmt.Printf("Total: %d, Valid: %d, Invalid: %d\n", summary.Total, summary.Valid, summary.Invalid)
 	// Output: Total: 2, Valid: 2, Invalid: 0
+}
+
+// TestRequestHeaders verifies that API requests use the correct headers
+// for third-party provider compatibility by using httptest.Server to
+// capture and verify actual HTTP requests.
+func TestRequestHeaders(t *testing.T) {
+	t.Run("verify /v1/models request headers", func(t *testing.T) {
+		// Create a test server to capture the request
+		var capturedHeaders http.Header
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			capturedHeaders = r.Header.Clone()
+			// Return a valid models response
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, `{"data":[{"id":"test-model"}]}`)
+		}))
+		defer server.Close()
+
+		// Call fetchAvailableModels which will hit our test server
+		models, err := fetchAvailableModels(server.URL, "test-token")
+		if err != nil {
+			t.Fatalf("fetchAvailableModels failed: %v", err)
+		}
+
+		// Verify we got a response
+		if len(models) != 1 || models[0] != "test-model" {
+			t.Errorf("unexpected models: %v", models)
+		}
+
+		// Verify expected headers are present
+		expectedHeaders := map[string]string{
+			"Authorization": "Bearer test-token",
+			"Accept":        "application/json",
+			"User-Agent":    "claude-cli/2.0.76 (external, cli)",
+			"X-App":         "cli",
+		}
+
+		for key, expectedValue := range expectedHeaders {
+			actualValue := capturedHeaders.Get(key)
+			if actualValue != expectedValue {
+				t.Errorf("header %s = %q, want %q", key, actualValue, expectedValue)
+			}
+		}
+
+		// Verify beta-related headers are NOT present
+		forbiddenHeaders := []string{
+			"Anthropic-Beta",
+			"Anthropic-Dangerous-Direct-Browser-Access",
+		}
+
+		for _, header := range forbiddenHeaders {
+			if capturedHeaders.Get(header) != "" {
+				t.Errorf("forbidden header %s should not be present (value: %s)", header, capturedHeaders.Get(header))
+			}
+		}
+	})
+
+	t.Run("verify /v1/messages request headers", func(t *testing.T) {
+		// Create a test server to capture the request
+		var capturedHeaders http.Header
+		var capturedBody []byte
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			capturedHeaders = r.Header.Clone()
+			body, _ := io.ReadAll(r.Body)
+			capturedBody = body
+
+			// Return a valid messages response
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, `{"id":"msg-123","type":"message","role":"assistant","content":[{"type":"text","text":"2"}],"stop_reason":"end_turn","model":"claude-3-5-sonnet-20241022"}`)
+		}))
+		defer server.Close()
+
+		// Call testAPIConnection which will hit our test server
+		status := testAPIConnection(server.URL, "test-token", "claude-3-5-sonnet-20241022")
+
+		// Verify we got a successful response
+		if status != "ok" {
+			t.Errorf("testAPIConnection status = %q, want 'ok'", status)
+		}
+
+		// Verify the request body was sent
+		if capturedBody == nil {
+			t.Error("request body was not captured")
+		}
+
+		// Verify expected headers are present
+		expectedHeaders := map[string]string{
+			"Authorization":     "Bearer test-token",
+			"Content-Type":      "application/json",
+			"Accept":            "application/json",
+			"Anthropic-Version": "2023-06-01",
+			"User-Agent":        "claude-cli/2.0.76 (external, cli)",
+			"X-App":             "cli",
+		}
+
+		for key, expectedValue := range expectedHeaders {
+			actualValue := capturedHeaders.Get(key)
+			if actualValue != expectedValue {
+				t.Errorf("header %s = %q, want %q", key, actualValue, expectedValue)
+			}
+		}
+
+		// Verify beta-related headers ARE present (required by some providers like 88)
+		betaHeaders := map[string]string{
+			"Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+			"Anthropic-Dangerous-Direct-Browser-Access": "true",
+		}
+
+		for key, expectedValue := range betaHeaders {
+			actualValue := capturedHeaders.Get(key)
+			if actualValue != expectedValue {
+				t.Errorf("beta header %s = %q, want %q", key, actualValue, expectedValue)
+			}
+		}
+	})
 }
