@@ -733,6 +733,8 @@ func TestRequestHeaders(t *testing.T) {
 		expectedHeaders := map[string]string{
 			"Authorization": "Bearer test-token",
 			"Accept":        "application/json",
+			"User-Agent":    "claude-cli/2.0.76 (external, cli)",
+			"X-App":         "cli",
 		}
 
 		for key, expectedValue := range expectedHeaders {
@@ -791,6 +793,8 @@ func TestRequestHeaders(t *testing.T) {
 			"Content-Type":      "application/json",
 			"Accept":            "application/json",
 			"Anthropic-Version": "2023-06-01",
+			"User-Agent":        "claude-cli/2.0.76 (external, cli)",
+			"X-App":             "cli",
 		}
 
 		for key, expectedValue := range expectedHeaders {
@@ -802,7 +806,7 @@ func TestRequestHeaders(t *testing.T) {
 
 		// Verify beta-related headers ARE present (required by some providers like 88)
 		betaHeaders := map[string]string{
-			"Anthropic-Beta":                         "claude-code-20250219,interleaved-thinking-2025-05-14",
+			"Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
 			"Anthropic-Dangerous-Direct-Browser-Access": "true",
 		}
 

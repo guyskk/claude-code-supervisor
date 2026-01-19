@@ -73,9 +73,11 @@ func fetchAvailableModels(baseURL, authToken string) ([]string, error) {
 		return nil, err
 	}
 
-	// Use minimal standard headers compatible with third-party providers
+	// Use standard headers compatible with third-party providers
 	req.Header.Set("Authorization", "Bearer "+authToken)
 	req.Header.Set("accept", "application/json")
+	req.Header.Set("user-agent", "claude-cli/2.0.76 (external, cli)")
+	req.Header.Set("x-app", "cli")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -260,12 +262,14 @@ func testAPIConnection(baseURL, authToken, model string) string {
 		return fmt.Sprintf("failed: %v", err)
 	}
 
-	// Use minimal standard headers compatible with third-party providers
-	// Include beta headers for providers that require them (like 88)
+	// Use standard headers compatible with third-party providers
+	// Include beta headers for providers that require them (like 88) to identify Claude Code requests
 	req.Header.Set("Authorization", "Bearer "+authToken)
 	req.Header.Set("anthropic-version", "2023-06-01")
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("accept", "application/json")
+	req.Header.Set("user-agent", "claude-cli/2.0.76 (external, cli)")
+	req.Header.Set("x-app", "cli")
 	req.Header.Set("anthropic-beta", "claude-code-20250219,interleaved-thinking-2025-05-14")
 	req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
 
