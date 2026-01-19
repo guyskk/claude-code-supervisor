@@ -130,9 +130,15 @@ func runClaude(cfg *config.Config, cmd *Command) error {
 	// Start with current process environment
 	env := os.Environ()
 
-	// Remove any existing ANTHROPIC_* environment variables to ensure provider config takes precedence
+	// Remove existing environment variables to ensure provider config takes precedence
+	prefixes := []string{"CLAUDE_", "ANTHROPIC_"}
 	env = filterEnvVars(env, func(key string) bool {
-		return !strings.HasPrefix(key, "ANTHROPIC_")
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(key, prefix) {
+				return false
+			}
+		}
+		return true
 	})
 
 	// Add merged provider env variables
