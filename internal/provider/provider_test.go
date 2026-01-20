@@ -499,3 +499,225 @@ func TestGetModel(t *testing.T) {
 		})
 	}
 }
+
+// ============================================================================
+// PreToolUse Hook Configuration Tests
+// ============================================================================
+
+func TestSwitchWithHook_PreToolUseConfiguration(t *testing.T) {
+	cleanup := setupTestDir(t)
+	defer cleanup()
+
+	cfg := setupTestConfig(t)
+
+	// Save initial config
+	if err := config.Save(cfg); err != nil {
+		t.Fatalf("Failed to save config: %v", err)
+	}
+
+	// Switch to glm
+	result, err := SwitchWithHook(cfg, "glm")
+	if err != nil {
+		t.Fatalf("SwitchWithHook() error = %v", err)
+	}
+
+	// Verify hooks are present in settings
+	hooks, ok := result.Settings["hooks"]
+	if !ok {
+		t.Fatal("Settings should contain 'hooks' field")
+	}
+
+	hooksMap, ok := hooks.(map[string]interface{})
+	if !ok {
+		t.Fatal("hooks should be a map")
+	}
+
+	// Verify Stop hook exists
+	stopHook, ok := hooksMap["Stop"]
+	if !ok {
+		t.Error("hooks should contain 'Stop' hook")
+	} else {
+		stopHookList, ok := stopHook.([]map[string]interface{})
+		if !ok {
+			t.Error("Stop hook should be a list of maps")
+		} else if len(stopHookList) == 0 {
+			t.Error("Stop hook list should not be empty")
+		}
+	}
+
+	// Verify PreToolUse hook exists
+	preToolUseHook, ok := hooksMap["PreToolUse"]
+	if !ok {
+		t.Error("hooks should contain 'PreToolUse' hook")
+	} else {
+		preToolUseList, ok := preToolUseHook.([]map[string]interface{})
+		if !ok {
+			t.Error("PreToolUse hook should be a list of maps")
+		} else if len(preToolUseList) == 0 {
+			t.Error("PreToolUse hook list should not be empty")
+		} else {
+			// Verify PreToolUse hook configuration structure
+			preToolUseConfig := preToolUseList[0]
+
+			// Verify matcher is set to "AskUserQuestion"
+			matcher, ok := preToolUseConfig["matcher"]
+			if !ok {
+				t.Error("PreToolUse hook config should contain 'matcher' field")
+			} else if matcher != "AskUserQuestion" {
+				t.Errorf("PreToolUse matcher = %v, want 'AskUserQuestion'", matcher)
+			}
+
+			// Verify hooks array exists
+			hooksArray, ok := preToolUseConfig["hooks"]
+			if !ok {
+				t.Error("PreToolUse hook config should contain 'hooks' array")
+			} else {
+				hooksList, ok := hooksArray.([]map[string]interface{})
+				if !ok || len(hooksList) == 0 {
+					t.Error("PreToolUse hooks array should not be empty")
+				} else {
+					// Verify hook command structure
+					hookConfig := hooksList[0]
+
+					// Verify type is "command"
+					if hookType, ok := hookConfig["type"]; !ok || hookType != "command" {
+						t.Error("Hook type should be 'command'")
+					}
+
+					// Verify timeout is set
+					if timeout, ok := hookConfig["timeout"]; !ok {
+						t.Error("Hook timeout should be set")
+					} else {
+						// Timeout can be int or float64 depending on JSON unmarshaling
+						var timeoutVal int
+						switch v := timeout.(type) {
+						case float64:
+							timeoutVal = int(v)
+						case int:
+							timeoutVal = v
+						}
+						if timeoutVal != 600 {
+							t.Errorf("Hook timeout = %v, want 600", timeout)
+						}
+					}
+
+					// Verify command field exists and contains "supervisor-hook"
+					if command, ok := hookConfig["command"]; !ok {
+						t.Error("Hook command should be set")
+					} else if commandStr, ok := command.(string); !ok || !strings.Contains(commandStr, "supervisor-hook") {
+						t.Errorf("Hook command = %v, should contain 'supervisor-hook'", command)
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestSwitchWithHook_PreToolUseAndStopCoexist verifies that PreToolUse and Stop hooks
+// can coexist without conflicts and both use the same supervisor command.
+func TestSwitchWithHook_PreToolUseAndStopCoexist(t *testing.T) {
+	cleanup := setupTestDir(t)
+	defer cleanup()
+
+	cfg := setupTestConfig(t)
+
+	// Save initial config
+	if err := config.Save(cfg); err != nil {
+		t.Fatalf("Failed to save config: %v", err)
+	}
+
+	// Switch to kimi
+	result, err := SwitchWithHook(cfg, "kimi")
+	if err != nil {
+		t.Fatalf("SwitchWithHook() error = %v", err)
+	}
+
+	// Get hooks configuration
+	hooks, ok := result.Settings["hooks"]
+	if !ok {
+		t.Fatal("Settings should contain 'hooks' field")
+	}
+
+	hooksMap, ok := hooks.(map[string]interface{})
+	if !ok {
+		t.Fatal("hooks should be a map")
+	}
+
+	// Both Stop and PreToolUse should exist
+	if _, ok := hooksMap["Stop"]; !ok {
+		t.Error("hooks should contain 'Stop' hook")
+	}
+	if _, ok := hooksMap["PreToolUse"]; !ok {
+		t.Error("hooks should contain 'PreToolUse' hook")
+	}
+
+	// Extract the command from Stop hook
+	stopHookList := hooksMap["Stop"].([]map[string]interface{})
+	stopConfig := stopHookList[0]
+	stopHooks := stopConfig["hooks"].([]map[string]interface{})
+	stopHookCommand := stopHooks[0]["command"].(string)
+
+	// Extract the command from PreToolUse hook
+	preToolUseList := hooksMap["PreToolUse"].([]map[string]interface{})
+	preToolUseConfig := preToolUseList[0]
+	preToolUseHooks := preToolUseConfig["hooks"].([]map[string]interface{})
+	preToolUseHookCommand := preToolUseHooks[0]["command"].(string)
+
+	// Both should use the same command
+	if stopHookCommand != preToolUseHookCommand {
+		t.Errorf("Stop and PreToolUse hooks should use the same command: Stop=%s, PreToolUse=%s",
+			stopHookCommand, preToolUseHookCommand)
+	}
+
+	// Both commands should contain "supervisor-hook"
+	if !strings.Contains(stopHookCommand, "supervisor-hook") {
+		t.Errorf("Stop hook command should contain 'supervisor-hook': %s", stopHookCommand)
+	}
+	if !strings.Contains(preToolUseHookCommand, "supervisor-hook") {
+		t.Errorf("PreToolUse hook command should contain 'supervisor-hook': %s", preToolUseHookCommand)
+	}
+}
+
+// TestSwitchWithHook_PreToolUseMatcherIsAskUserQuestion verifies that the PreToolUse
+// hook only triggers for AskUserQuestion tool calls, not for other tools.
+func TestSwitchWithHook_PreToolUseMatcherIsAskUserQuestion(t *testing.T) {
+	cleanup := setupTestDir(t)
+	defer cleanup()
+
+	cfg := setupTestConfig(t)
+
+	// Save initial config
+	if err := config.Save(cfg); err != nil {
+		t.Fatalf("Failed to save config: %v", err)
+	}
+
+	// Switch to glm
+	result, err := SwitchWithHook(cfg, "glm")
+	if err != nil {
+		t.Fatalf("SwitchWithHook() error = %v", err)
+	}
+
+	// Get hooks configuration
+	hooks := result.Settings["hooks"].(map[string]interface{})
+	preToolUseList := hooks["PreToolUse"].([]map[string]interface{})
+	preToolUseConfig := preToolUseList[0]
+
+	// Verify matcher is exactly "AskUserQuestion"
+	matcher := preToolUseConfig["matcher"]
+	if matcher != "AskUserQuestion" {
+		t.Errorf("PreToolUse matcher should be 'AskUserQuestion', got: %v", matcher)
+	}
+
+	// Verify matcher is a string (not a regex pattern or complex object)
+	if _, ok := matcher.(string); !ok {
+		t.Error("PreToolUse matcher should be a string")
+	}
+
+	// Verify that common tool names are NOT in the configuration
+	// (this ensures we're using a matcher, not a blacklist)
+	for _, toolName := range []string{"Browser", "Bash", "Edit", "Write"} {
+		if matcher == toolName {
+			t.Errorf("PreToolUse matcher should not be '%s', it should be 'AskUserQuestion'", toolName)
+		}
+	}
+}

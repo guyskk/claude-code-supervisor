@@ -723,7 +723,10 @@ func TestSupervisorResultToHookOutput_Stop_AllowStopFalse(t *testing.T) {
 // Integration Tests
 // ============================================================================
 
-func TestRunSupervisorHook_PreToolUse_InputParsing(t *testing.T) {
+// TestRunSupervisorHook_RecursiveCallProtection tests the CCC_SUPERVISOR_HOOK=1
+// protection mechanism that prevents infinite recursion when the supervisor
+// itself calls tools that might trigger hooks.
+func TestRunSupervisorHook_RecursiveCallProtection(t *testing.T) {
 	// Save original GetDirFunc to restore after test
 	originalGetDirFunc := config.GetDirFunc
 	defer func() { config.GetDirFunc = originalGetDirFunc }()
@@ -736,7 +739,7 @@ func TestRunSupervisorHook_PreToolUse_InputParsing(t *testing.T) {
 	state := &supervisor.State{
 		Enabled: true,
 	}
-	if err := supervisor.SaveState("test-integration-pretooluse", state); err != nil {
+	if err := supervisor.SaveState("test-recursive-protection", state); err != nil {
 		t.Fatalf("failed to save state: %v", err)
 	}
 
@@ -747,27 +750,15 @@ func TestRunSupervisorHook_PreToolUse_InputParsing(t *testing.T) {
 		os.Setenv("CCC_SUPERVISOR_ID", oldSupervisorID)
 		os.Setenv("CCC_SUPERVISOR_HOOK", oldSupervisorHook)
 	}()
-	os.Setenv("CCC_SUPERVISOR_ID", "test-integration-pretooluse")
-	os.Setenv("CCC_SUPERVISOR_HOOK", "1") // Prevent recursive calls
+	os.Setenv("CCC_SUPERVISOR_ID", "test-recursive-protection")
+	os.Setenv("CCC_SUPERVISOR_HOOK", "1") // Simulate recursive call
 
 	// Create stdin with PreToolUse hook input
 	hookInputJSON := `{
-		"session_id": "test-integration-pretooluse",
+		"session_id": "test-recursive-protection",
 		"hook_event_name": "PreToolUse",
 		"tool_name": "AskUserQuestion",
-		"tool_input": {
-			"questions": [
-				{
-					"question": "请选择方案",
-					"header": "方案选择",
-					"multiSelect": false,
-					"options": [
-						{"label": "方案A", "description": "使用方案A"},
-						{"label": "方案B", "description": "使用方案B"}
-					]
-				}
-			]
-		},
+		"tool_input": {},
 		"tool_use_id": "toolu_test_123"
 	}`
 
@@ -781,13 +772,64 @@ func TestRunSupervisorHook_PreToolUse_InputParsing(t *testing.T) {
 	}()
 	defer func() { os.Stdin = oldStdin }()
 
-	// Run the hook command
+	// Run the hook command - should return early with allow decision
 	opts := &SupervisorHookCommand{}
 	err := RunSupervisorHook(opts)
 
-	// Due to CCC_SUPERVISOR_HOOK=1, it should return early with allow decision
 	if err != nil {
 		t.Errorf("RunSupervisorHook() error = %v, want nil (early return due to CCC_SUPERVISOR_HOOK=1)", err)
+	}
+}
+
+// TestRunSupervisorHook_SupervisorModeDisabled tests that when supervisor mode
+// is disabled, the hook allows the operation without calling the SDK.
+func TestRunSupervisorHook_SupervisorModeDisabled(t *testing.T) {
+	// Save original GetDirFunc to restore after test
+	originalGetDirFunc := config.GetDirFunc
+	defer func() { config.GetDirFunc = originalGetDirFunc }()
+
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+	config.GetDirFunc = func() string { return tempDir }
+
+	// Create a state file with supervisor DISABLED
+	state := &supervisor.State{
+		Enabled: false,
+	}
+	if err := supervisor.SaveState("test-supervisor-disabled", state); err != nil {
+		t.Fatalf("failed to save state: %v", err)
+	}
+
+	// Set required environment variables
+	oldSupervisorID := os.Getenv("CCC_SUPERVISOR_ID")
+	defer func() { os.Setenv("CCC_SUPERVISOR_ID", oldSupervisorID) }()
+	os.Setenv("CCC_SUPERVISOR_ID", "test-supervisor-disabled")
+
+	// Create stdin with PreToolUse hook input
+	hookInputJSON := `{
+		"session_id": "test-supervisor-disabled",
+		"hook_event_name": "PreToolUse",
+		"tool_name": "AskUserQuestion",
+		"tool_input": {},
+		"tool_use_id": "toolu_test_456"
+	}`
+
+	// Simulate stdin by creating a pipe
+	oldStdin := os.Stdin
+	r, w, _ := os.Pipe()
+	os.Stdin = r
+	go func() {
+		w.Write([]byte(hookInputJSON))
+		w.Close()
+	}()
+	defer func() { os.Stdin = oldStdin }()
+
+	// Run the hook command - should return early with allow decision
+	opts := &SupervisorHookCommand{}
+	err := RunSupervisorHook(opts)
+
+	if err != nil {
+		t.Errorf("RunSupervisorHook() error = %v, want nil (supervisor disabled)", err)
 	}
 }
 
