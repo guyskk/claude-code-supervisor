@@ -22,16 +22,50 @@ import (
 //go:embed supervisor_prompt_default.md
 var defaultPromptContent []byte
 
-// StopHookInput represents the input from Stop hook.
-type StopHookInput struct {
+// HookInput represents the input from any Claude Code hook event.
+// It supports all hook event types including Stop and PreToolUse.
+type HookInput struct {
+	// Common fields (all event types)
 	SessionID      string `json:"session_id"`
-	StopHookActive bool   `json:"stop_hook_active"`
+	TranscriptPath string `json:"transcript_path,omitempty"`
+	CWD            string `json:"cwd,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
+	HookEventName  string `json:"hook_event_name,omitempty"` // "Stop", "PreToolUse", etc.
+
+	// Stop event fields
+	StopHookActive bool `json:"stop_hook_active,omitempty"`
+
+	// PreToolUse event fields
+	ToolName  string          `json:"tool_name,omitempty"`   // e.g., "AskUserQuestion"
+	ToolInput json.RawMessage `json:"tool_input,omitempty"`  // Tool-specific input
+	ToolUseID string          `json:"tool_use_id,omitempty"` // Tool call ID
 }
+
+// StopHookInput is an alias for HookInput to maintain backward compatibility.
+type StopHookInput = HookInput
 
 // SupervisorResult represents the parsed output from Supervisor.
 type SupervisorResult struct {
 	AllowStop bool   `json:"allow_stop"` // Whether to allow the Agent to stop
 	Feedback  string `json:"feedback"`   // Feedback when AllowStop is false
+}
+
+// HookOutput represents the output to any Claude Code hook event.
+// The format varies based on the event type (Stop vs PreToolUse).
+type HookOutput struct {
+	// Stop event fields
+	Decision *string `json:"decision,omitempty"` // "block" or omitted (allows stop)
+	Reason   string  `json:"reason,omitempty"`   // Feedback message
+
+	// PreToolUse event fields
+	HookSpecificOutput *HookSpecificOutput `json:"hookSpecificOutput,omitempty"`
+}
+
+// HookSpecificOutput represents the PreToolUse hook specific output.
+type HookSpecificOutput struct {
+	HookEventName            string `json:"hookEventName"`            // "PreToolUse"
+	PermissionDecision       string `json:"permissionDecision"`       // "allow", "deny", "ask"
+	PermissionDecisionReason string `json:"permissionDecisionReason"` // Decision reason
 }
 
 // supervisorResultSchema is the JSON schema for parsing supervisor output.
@@ -48,6 +82,39 @@ var supervisorResultSchema = map[string]interface{}{
 		},
 	},
 	"required": []string{"allow_stop", "feedback"},
+}
+
+// SupervisorResultToHookOutput converts a SupervisorResult to HookOutput based on event type.
+// For PreToolUse events, it returns permissionDecision (allow/deny).
+// For Stop events (default), it returns decision (block/allow).
+func SupervisorResultToHookOutput(result *SupervisorResult, eventType string) *HookOutput {
+	if eventType == "PreToolUse" {
+		decision := "allow"
+		if !result.AllowStop {
+			decision = "deny"
+		}
+		return &HookOutput{
+			HookSpecificOutput: &HookSpecificOutput{
+				HookEventName:            "PreToolUse",
+				PermissionDecision:       decision,
+				PermissionDecisionReason: result.Feedback,
+			},
+		}
+	}
+
+	// Stop event (default)
+	if !result.AllowStop {
+		block := "block"
+		return &HookOutput{
+			Decision: &block,
+			Reason:   result.Feedback,
+		}
+	}
+
+	// Allow stop
+	return &HookOutput{
+		Reason: result.Feedback,
+	}
 }
 
 func logCurrentEnv(log *slog.Logger) {
@@ -109,7 +176,8 @@ func RunSupervisorHook(opts *SupervisorHookCommand) error {
 		sessionID = opts.SessionId
 		log.Debug("using session_id from command line argument", "session_id", sessionID)
 	}
-	var input StopHookInput
+	var input HookInput
+	var eventType string // Track the event type (Stop, PreToolUse, etc.)
 	if sessionID == "" {
 		// Parse stdin input
 		decoder := json.NewDecoder(os.Stdin)
@@ -117,13 +185,21 @@ func RunSupervisorHook(opts *SupervisorHookCommand) error {
 			return fmt.Errorf("failed to parse stdin JSON: %w", err)
 		}
 		sessionID = input.SessionID
+		// Identify event type from hook_event_name field
+		eventType = input.HookEventName
+		if eventType == "" {
+			eventType = "Stop" // Default to Stop event if not specified
+		}
 		// Log input
 		inputJSON, err := json.MarshalIndent(input, "", "  ")
 		if err != nil {
 			log.Warn("failed to marshal hook input", "error", err.Error())
 		} else {
-			log.Debug("hook input", "input", string(inputJSON))
+			log.Debug("hook input", "event_type", eventType, "input", string(inputJSON))
 		}
+	} else {
+		// When sessionID comes from command line, default to Stop event
+		eventType = "Stop"
 	}
 
 	// Validate sessionID is present
@@ -177,23 +253,42 @@ func RunSupervisorHook(opts *SupervisorHookCommand) error {
 
 	// Output result based on AllowStop decision
 	if result == nil {
-		log.Info("no supervisor result found, allowing stop")
-		return supervisor.OutputDecision(log, true, "no supervisor result found")
+		log.Info("no supervisor result found, allowing operation")
+		// For PreToolUse events, allow the tool call
+		// For Stop events, allow stopping
+		output := SupervisorResultToHookOutput(&SupervisorResult{AllowStop: true, Feedback: "no supervisor result found"}, eventType)
+		return outputHookOutput(output, log)
 	}
 
-	if result.AllowStop {
-		log.Info("work satisfactory, allowing stop")
-		// Ensure feedback is not empty when allowing stop
-		feedback := strings.TrimSpace(result.Feedback)
-		if feedback == "" {
-			feedback = "Work completed satisfactorily"
+	// Convert SupervisorResult to HookOutput based on event type
+	output := SupervisorResultToHookOutput(result, eventType)
+
+	// Log the decision based on event type
+	if eventType == "PreToolUse" {
+		if result.AllowStop {
+			log.Info("supervisor output: allow tool call", "feedback", result.Feedback)
+		} else {
+			log.Info("supervisor output: deny tool call", "feedback", result.Feedback)
 		}
-		return supervisor.OutputDecision(log, true, feedback)
+	} else {
+		if result.AllowStop {
+			log.Info("supervisor output: allow stop", "feedback", result.Feedback)
+		} else {
+			log.Info("supervisor output: not allow stop", "feedback", result.Feedback)
+		}
 	}
 
-	// Block with feedback
-	log.Info("work not satisfactory, agent will continue")
-	return supervisor.OutputDecision(log, false, result.Feedback)
+	return outputHookOutput(output, log)
+}
+
+// outputHookOutput outputs the HookOutput as JSON to stdout.
+func outputHookOutput(output *HookOutput, log *slog.Logger) error {
+	outputJSON, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal hook output: %w", err)
+	}
+	fmt.Println(string(outputJSON))
+	return nil
 }
 
 // runSupervisorWithSDK runs the supervisor using the Claude Agent SDK.

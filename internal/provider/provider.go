@@ -81,6 +81,18 @@ func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, err
 				},
 			},
 		},
+		"PreToolUse": []map[string]interface{}{
+			{
+				"matcher": "AskUserQuestion", // Match only AskUserQuestion tool
+				"hooks": []map[string]interface{}{
+					{
+						"type":    "command",
+						"command": hookCommand, // Reuse the same command
+						"timeout": 600,
+					},
+				},
+			},
+		},
 	}
 	settingsWithHook["hooks"] = hooks
 
