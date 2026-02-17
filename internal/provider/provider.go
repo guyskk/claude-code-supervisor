@@ -65,17 +65,16 @@ func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, err
 	}
 
 	// Build settings with hook, but without env
-	// Start with existing settings to preserve user configurations
-	settingsWithHook := make(map[string]interface{})
-	for k, v := range existingSettings {
-		settingsWithHook[k] = v
-	}
-	// Then apply merged settings from ccc.json (excluding env)
+	// Use DeepMerge to merge ccc.json settings into existing settings.json,
+	// so that nested maps like enabledPlugins are merged (not overwritten).
+	// This preserves plugins installed during a Claude Code session.
+	mergedSettingsWithoutEnv := make(map[string]interface{})
 	for k, v := range mergedSettings {
 		if k != "env" {
-			settingsWithHook[k] = v
+			mergedSettingsWithoutEnv[k] = v
 		}
 	}
+	settingsWithHook := config.DeepMerge(existingSettings, mergedSettingsWithoutEnv)
 
 	// Ensure hooks are enabled (these settings may prevent hooks from executing)
 	settingsWithHook["disableAllHooks"] = false
