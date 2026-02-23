@@ -148,6 +148,37 @@ sudo ccc patch --reset
 
 配置文件位置，默认为：`~/.claude/ccc.json`
 
+### 配置合并策略
+
+**用户配置被保留。** ccc 遵循以下原则合并配置：
+
+1. **优先级**: 用户的 `settings.json` 配置具有最高优先级
+2. **提供商配置**: ccc.json 中的提供商特定配置覆盖基础设置
+3. **基础设置**: ccc.json 中的 `settings` 字段作为共享模板
+
+#### 保留的内容
+
+- ✅ 用户安装的插件 (`enabledPlugins`) - 不会被覆盖
+- ✅ 手动编辑的 `settings.json`（权限、沙箱等）- 完全保留
+- ✅ 用户配置的 hooks（PreToolUse、SessionStart 等）- 被尊重
+- ✅ 用户在 settings.json 中手动设置的环境变量 - 不会删除（除了冲突，见下文）
+
+#### 管理的内容
+
+- 🤖 Supervisor Stop hook - 自动添加/确保
+- 🧹 环境变量冲突 - `ANTHROPIC_*`、`CLAUDE_*` 和提供商 env 键从 `settings.json` 中移除以避免歧义
+- ⚙️ Hook 执行标志 - `disableAllHooks` 和 `allowManagedHooksOnly` 设置为 `false` 以确保 hooks 能正常工作
+
+#### 工作原理
+
+当你运行 `ccc` 时：
+1. 读取现有的 `settings.json`（如果存在）
+2. 按优先级合并配置：`用户 > 提供商 > 基础`
+3. 提供商的环境变量通过命令行传递（不写入 settings.json）
+4. 添加 Supervisor Stop hook（如果需要）同时保留用户的其他 hooks
+
+这样可以确保你的手动配置永远不会丢失！
+
 ### 完整配置示例
 
 ```json
@@ -193,6 +224,8 @@ sudo ccc patch --reset
 | `claude_args`      | 固定传递给 Claude Code 的参数（可选） |
 | `current_provider` | 当前使用的提供商（由 ccc 自动管理）   |
 | `providers.{name}` | 提供商特定的 Claude Code 配置         |
+
+**合并方式**：提供商设置与基础模板深度合并。提供商的 `env` 优先于 `settings.env`。
 
 ### 提供商配置
 

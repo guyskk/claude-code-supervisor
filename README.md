@@ -148,6 +148,37 @@ sudo ccc patch --reset
 
 Config file location, default: `~/.claude/ccc.json`
 
+### Configuration Merge Strategy
+
+**User settings are preserved.** ccc follows these principles when merging configuration:
+
+1. **Priority**: User's `settings.json` configuration has the highest priority
+2. **Provider settings**: Provider-specific configuration from ccc.json overrides base settings
+3. **Base settings**: The `settings` field in ccc.json serves as a shared template
+
+#### What Gets Preserved
+
+- ✅ User-installed plugins (`enabledPlugins`) - never overwritten
+- ✅ Manual `settings.json` edits (permissions, sandbox, etc.) - fully preserved
+- ✅ User-configured hooks (PreToolUse, SessionStart, etc.) - respected
+- ✅ Environment variables you manually set in settings.json - not removed (except for conflicts, see below)
+
+#### What Gets Managed
+
+- 🤖 Supervisor Stop hook - automatically added/ensured
+- 🧹 Environment variable conflicts - `ANTHROPIC_*`, `CLAUDE_*`, and provider env keys are removed from `settings.json` to avoid ambiguity
+- ⚙️ Hook execution flags - `disableAllHooks` and `allowManagedHooksOnly` set to `false` to ensure hooks work
+
+#### How It Works
+
+When you run `ccc`:
+1. Your existing `settings.json` is read (if it exists)
+2. Configuration is merged with priority: `user > provider > base`
+3. Environment variables from provider are passed via command line (not written to settings.json)
+4. Supervisor Stop hook is added (if needed) while preserving your other hooks
+
+This ensures your manual configuration is never lost!
+
 ### Complete Config Example
 
 ```json
