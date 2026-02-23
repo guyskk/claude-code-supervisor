@@ -329,6 +329,50 @@ func TestDeepCopy(t *testing.T) {
 			}
 		})
 	}
+
+	// Test slice deep copy independence
+	t.Run("slice independence", func(t *testing.T) {
+		original := map[string]interface{}{
+			"slice": []interface{}{1, 2, 3},
+		}
+		copied := deepCopy(original)
+
+		// Modify the slice in the copy
+		if slice, ok := copied["slice"].([]interface{}); ok {
+			slice[0] = 999
+		}
+
+		// Original should be unchanged
+		originalSlice := original["slice"].([]interface{})
+		if originalSlice[0] != 1 {
+			t.Error("Modifying slice in copy should not affect original")
+		}
+	})
+
+	// Test nested slice with maps
+	t.Run("nested slice with maps", func(t *testing.T) {
+		original := map[string]interface{}{
+			"items": []interface{}{
+				map[string]interface{}{"id": 1, "name": "a"},
+				map[string]interface{}{"id": 2, "name": "b"},
+			},
+		}
+		copied := deepCopy(original)
+
+		// Modify nested map in the copied slice
+		if slice, ok := copied["items"].([]interface{}); ok {
+			if first, ok := slice[0].(map[string]interface{}); ok {
+				first["id"] = 999
+			}
+		}
+
+		// Original should be unchanged
+		originalSlice := original["items"].([]interface{})
+		originalFirst := originalSlice[0].(map[string]interface{})
+		if originalFirst["id"] != 1 {
+			t.Error("Modifying nested map in slice copy should not affect original")
+		}
+	})
 }
 
 func TestDeepMerge(t *testing.T) {

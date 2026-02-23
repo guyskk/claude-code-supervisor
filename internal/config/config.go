@@ -10,6 +10,9 @@ import (
 	"strings"
 )
 
+// stopHookTimeout is the timeout in seconds for the Supervisor Stop hook.
+const stopHookTimeout = 600 // 10 minutes
+
 // GetDirFunc is a function that returns the Claude configuration directory.
 // This variable allows tests to override the default behavior.
 var GetDirFunc = func() string {
@@ -117,10 +120,33 @@ func deepCopy(original map[string]interface{}) map[string]interface{} {
 
 	copied := make(map[string]interface{})
 	for k, v := range original {
-		if nestedMap, ok := v.(map[string]interface{}); ok {
-			copied[k] = deepCopy(nestedMap)
-		} else {
+		switch val := v.(type) {
+		case map[string]interface{}:
+			copied[k] = deepCopy(val)
+		case []interface{}:
+			copied[k] = deepCopySlice(val)
+		default:
 			copied[k] = v
+		}
+	}
+	return copied
+}
+
+// deepCopySlice creates a deep copy of a []interface{}.
+func deepCopySlice(original []interface{}) []interface{} {
+	if original == nil {
+		return nil
+	}
+
+	copied := make([]interface{}, len(original))
+	for i, v := range original {
+		switch val := v.(type) {
+		case map[string]interface{}:
+			copied[i] = deepCopy(val)
+		case []interface{}:
+			copied[i] = deepCopySlice(val)
+		default:
+			copied[i] = v
 		}
 	}
 	return copied
@@ -331,7 +357,7 @@ func EnsureStopHook(settings map[string]interface{}, hookCommand string) map[str
 			map[string]interface{}{
 				"type":    "command",
 				"command": hookCommand,
-				"timeout": float64(600),
+				"timeout": float64(stopHookTimeout),
 			},
 		},
 	}
