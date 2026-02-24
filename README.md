@@ -179,8 +179,6 @@ When you run `ccc`:
 
 This ensures your manual configuration is never lost!
 
-### Complete Config Example
-
 ```json
 {
   "settings": {
