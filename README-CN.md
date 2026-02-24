@@ -91,6 +91,37 @@ ccc validate
 ccc validate --all
 ```
 
+## 配置合并策略
+
+**你的配置永远不会丢失！** ccc 遵循以下原则合并配置：
+
+- **优先级**：用户的 `settings.json` 配置具有最高优先级
+- **提供商配置**：ccc.json 中的提供商特定配置覆盖基础设置
+- **基础设置**：ccc.json 中的 `settings` 字段作为共享模板
+
+#### 保留的内容
+
+- ✅ 用户安装的插件（`enabledPlugins`）- 不会被覆盖
+- ✅ 手动编辑的 `settings.json`（权限、沙箱等）- 完全保留
+- ✅ 用户配置的其他 hooks（PreToolUse、SessionStart 等）- 被尊重
+- ✅ 用户在 `settings.json` 中手动设置的环境变量 - 不会被删除（除了冲突，见下文）
+
+#### 管理的内容
+
+- 🤖 Supervisor Stop hook - 自动添加/确保
+- 🧹 环境变量冲突 - `ANTHROPIC_*`、`CLAUDE_*` 和提供商 env 键从 `settings.json` 中移除以避免歧义
+- ⚙️ Hook 执行标志 - `disableAllHooks` 和 `allowManagedHooksOnly` 设置为 `false` 以确保 hooks 能正常工作
+
+#### 工作原理
+
+当你运行 `ccc` 时：
+1. 读取现有的 `settings.json`（如果存在）
+2. 按优先级合并配置：`用户 > 提供商 > 基础`
+3. 提供商的环境变量通过命令行传递（不写入 `settings.json`）
+4. 添加 Supervisor Stop hook（如果需要）同时保留用户的其他 hooks
+
+这样可以确保你的手动配置永远不会丢失！
+
 ## Supervisor 模式（推荐）
 
 Supervisor 模式是 `ccc` 最有价值的特性。它会在 Agent 每次停止后自动审查工作质量，如果未完成则提供反馈让 Agent 继续执行。

@@ -27,7 +27,11 @@ type SwitchResult struct {
 }
 
 // SwitchWithHook switches to the specified provider and adds Stop hook configuration.
-// It generates settings.json (without env) with Stop hook for Supervisor mode.
+// It generates settings.json with merged configuration from:
+//  1. Existing settings.json (user config - highest priority)
+//  2. ccc.json settings (base template)
+//  3. Provider settings (provider-specific)
+//
 // It also creates slash command files for enabling/disabling Supervisor mode.
 // Returns the merged env that should be passed to the claude subprocess.
 func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, error) {
@@ -41,11 +45,24 @@ func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, err
 		return nil, fmt.Errorf("provider '%s' not found in configuration", providerName)
 	}
 
-	// Create the merged settings
-	mergedSettings := config.DeepMerge(cfg.Settings, providerSettings)
+	// Load existing settings.json (user's actual configuration)
+	userSettings, err := config.LoadSettings()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load settings: %w", err)
+	}
 
-	// Extract env before removing it from settings
-	envMap := config.GetEnv(mergedSettings)
+	// Merge with priority: user > provider > base
+	mergedSettings := config.MergeWithPriority(cfg.Settings, providerSettings, userSettings)
+
+	// Extract provider env keys for cleaning
+	providerEnvMap := config.GetEnv(providerSettings)
+	var providerEnvKeys []string
+	for key := range providerEnvMap {
+		providerEnvKeys = append(providerEnvKeys, key)
+	}
+
+	// Clean env: remove ANTHROPIC_*, CLAUDE_* prefixes and provider env keys
+	settingsWithHook := config.CleanEnvInSettings(mergedSettings, providerEnvKeys)
 
 	// Get ccc absolute path for hook command
 	cccPath, err := os.Executable()
@@ -56,48 +73,14 @@ func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, err
 	// Build hook command (no --state-dir parameter, state dir is handled internally)
 	hookCommand := fmt.Sprintf("%s supervisor-hook", cccPath)
 
-	// Build settings with hook, but without env
-	settingsWithHook := make(map[string]interface{})
-	for k, v := range mergedSettings {
-		if k != "env" {
-			settingsWithHook[k] = v
-		}
-	}
+	// Ensure Supervisor Stop hook exists (preserves user's other hooks)
+	// This also sets disableAllHooks and allowManagedHooksOnly to false
+	settingsWithHook = config.EnsureStopHook(settingsWithHook, hookCommand)
 
-	// Ensure hooks are enabled (these settings may prevent hooks from executing)
-	settingsWithHook["disableAllHooks"] = false
-	settingsWithHook["allowManagedHooksOnly"] = false
+	// Remove env from settings before saving (provider env is passed via command line)
+	delete(settingsWithHook, "env")
 
-	// Create hooks configuration
-	hooks := map[string]interface{}{
-		"Stop": []map[string]interface{}{
-			{
-				"hooks": []map[string]interface{}{
-					{
-						"type":    "command",
-						"command": hookCommand,
-						"timeout": 600,
-					},
-				},
-			},
-		},
-		// NOTE: PreToolUse hook is not supported yet, use claude_args --disallowed-tools instead
-		// "PreToolUse": []map[string]interface{}{
-		// 	{
-		// 		"matcher": "AskUserQuestion", // Match only AskUserQuestion tool
-		// 		"hooks": []map[string]interface{}{
-		// 			{
-		// 				"type":    "command",
-		// 				"command": hookCommand, // Reuse the same command
-		// 				"timeout": 600,
-		// 			},
-		// 		},
-		// 	},
-		// },
-	}
-	settingsWithHook["hooks"] = hooks
-
-	// Save settings with hook (without env) to settings.json
+	// Save merged settings to settings.json
 	settingsPath := config.GetSettingsPath()
 	settingsData, err := json.MarshalIndent(settingsWithHook, "", "  ")
 	if err != nil {
@@ -117,6 +100,9 @@ func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, err
 	if err := config.Save(cfg); err != nil {
 		return nil, fmt.Errorf("failed to update current provider: %w", err)
 	}
+
+	// Extract env map from merged settings for passing to subprocess
+	envMap := config.GetEnv(mergedSettings)
 
 	// Convert env map to EnvPair slice
 	envVars := envMapToPairs(envMap)
