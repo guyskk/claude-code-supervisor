@@ -77,9 +77,6 @@ func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, err
 	// This also sets disableAllHooks and allowManagedHooksOnly to false
 	settingsWithHook = config.EnsureStopHook(settingsWithHook, hookCommand)
 
-	// Remove env from settings before saving (provider env is passed via command line)
-	delete(settingsWithHook, "env")
-
 	// Save merged settings to settings.json
 	settingsPath := config.GetSettingsPath()
 	settingsData, err := json.MarshalIndent(settingsWithHook, "", "  ")

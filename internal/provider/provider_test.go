@@ -96,9 +96,34 @@ func TestSwitchWithHook(t *testing.T) {
 			t.Errorf("API_TIMEOUT = %v, want 30000", envMap["API_TIMEOUT"])
 		}
 
-		// Verify settings does not contain env
-		if _, exists := result.Settings["env"]; exists {
-			t.Error("Settings should not contain 'env' field")
+		// Verify settings does not contain provider env but contains user env
+		settingsEnv, exists := result.Settings["env"]
+		if !exists {
+			t.Fatal("Settings should contain 'env' field")
+		}
+		
+		settingsEnvMap, ok := settingsEnv.(map[string]interface{})
+		if !ok {
+			t.Fatal("env should be a map")
+		}
+		
+		// Should not contain provider env variables
+		if _, exists := settingsEnvMap["ANTHROPIC_BASE_URL"]; exists {
+			t.Error("Settings should not contain provider ANTHROPIC_BASE_URL")
+		}
+		if _, exists := settingsEnvMap["ANTHROPIC_AUTH_TOKEN"]; exists {
+			t.Error("Settings should not contain provider ANTHROPIC_AUTH_TOKEN")
+		}
+		if _, exists := settingsEnvMap["ANTHROPIC_MODEL"]; exists {
+			t.Error("Settings should not contain provider ANTHROPIC_MODEL")
+		}
+		
+		// Should contain user env variables
+		if settingsEnvMap["API_TIMEOUT"] != "30000" {
+			t.Error("Settings should contain user API_TIMEOUT")
+		}
+		if settingsEnvMap["DISABLE_TELEMETRY"] != "1" {
+			t.Error("Settings should contain user DISABLE_TELEMETRY")
 		}
 
 		// Verify hooks are present
