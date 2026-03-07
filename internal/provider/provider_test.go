@@ -111,6 +111,9 @@ func TestSwitchWithHook(t *testing.T) {
 		if _, exists := settingsEnvMap["ANTHROPIC_BASE_URL"]; exists {
 			t.Error("Settings should not contain provider ANTHROPIC_BASE_URL")
 		}
+		if _, exists := settingsEnvMap["ANTHROPIC_API_KEY"]; exists {
+			t.Error("Settings should not contain provider ANTHROPIC_API_KEY")
+		}
 		if _, exists := settingsEnvMap["ANTHROPIC_AUTH_TOKEN"]; exists {
 			t.Error("Settings should not contain provider ANTHROPIC_AUTH_TOKEN")
 		}
