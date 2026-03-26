@@ -152,7 +152,133 @@ func TestSwitchWithHook(t *testing.T) {
 	})
 }
 
-func TestEnvPairsToStrings(t *testing.T) {
+func TestSwitchWithHookUserEnv(t *testing.T) {
+
+	t.Run("preserves user env without conflicts", func(t *testing.T) {
+		cleanup := setupTestDir(t)
+		defer cleanup()
+
+		cfg := setupTestConfig(t)
+
+		// Pre-create settings.json with user-defined env
+		userSettings := map[string]interface{}{
+			"alwaysThinkingEnabled": false,
+			"env": map[string]interface{}{
+				"MY_CUSTOM_VAR":     "custom_value",
+				"MY_OTHER_VAR":      "other_value",
+				"ANTHROPIC_MODEL":   "should-be-filtered",
+				"DISABLE_TELEMETRY": "1",
+			},
+		}
+		if err := config.SaveSettings(userSettings); err != nil {
+			t.Fatalf("Failed to save user settings: %v", err)
+		}
+
+		// Save initial config
+		if err := config.Save(cfg); err != nil {
+			t.Fatalf("Failed to save config: %v", err)
+		}
+
+		// Switch to glm
+		result, err := SwitchWithHook(cfg, "glm")
+		if err != nil {
+			t.Fatalf("SwitchWithHook() error = %v", err)
+		}
+
+		// Verify settings.json has filtered user env
+		settingsEnv := config.GetEnv(result.Settings)
+		if settingsEnv == nil {
+			t.Fatal("Settings should contain filtered user env")
+		}
+
+		// MY_CUSTOM_VAR and MY_OTHER_VAR should be preserved (not in base/provider env)
+		if settingsEnv["MY_CUSTOM_VAR"] != "custom_value" {
+			t.Errorf("MY_CUSTOM_VAR = %v, want custom_value", settingsEnv["MY_CUSTOM_VAR"])
+		}
+		if settingsEnv["MY_OTHER_VAR"] != "other_value" {
+			t.Errorf("MY_OTHER_VAR = %v, want other_value", settingsEnv["MY_OTHER_VAR"])
+		}
+
+		// ANTHROPIC_MODEL should be filtered (ANTHROPIC_ prefix)
+		if _, exists := settingsEnv["ANTHROPIC_MODEL"]; exists {
+			t.Error("ANTHROPIC_MODEL should be filtered from settings env")
+		}
+
+		// DISABLE_TELEMETRY should be filtered (exists in base env)
+		if _, exists := settingsEnv["DISABLE_TELEMETRY"]; exists {
+			t.Error("DISABLE_TELEMETRY should be filtered (conflicts with base env)")
+		}
+
+		// Verify subprocess env does not contain user custom vars
+		envMap := make(map[string]string)
+		for _, pair := range result.EnvVars {
+			envMap[pair.Key] = pair.Value
+		}
+		if _, exists := envMap["MY_CUSTOM_VAR"]; exists {
+			t.Error("Subprocess env should not contain MY_CUSTOM_VAR (user env)")
+		}
+		if _, exists := envMap["MY_OTHER_VAR"]; exists {
+			t.Error("Subprocess env should not contain MY_OTHER_VAR (user env)")
+		}
+
+		// Subprocess env should contain base + provider env
+		if envMap["API_TIMEOUT"] != "30000" {
+			t.Errorf("Subprocess API_TIMEOUT = %v, want 30000", envMap["API_TIMEOUT"])
+		}
+		if envMap["ANTHROPIC_BASE_URL"] != "https://open.bigmodel.cn/api/anthropic" {
+			t.Errorf("Subprocess ANTHROPIC_BASE_URL = %v, want glm URL", envMap["ANTHROPIC_BASE_URL"])
+		}
+	})
+
+	t.Run("removes conflicting user env", func(t *testing.T) {
+		cleanup := setupTestDir(t)
+		defer cleanup()
+
+		cfg := setupTestConfig(t)
+
+		// Pre-create settings.json with env that conflicts with base and provider
+		userSettings := map[string]interface{}{
+			"env": map[string]interface{}{
+				"API_TIMEOUT":          "99999",
+				"ANTHROPIC_AUTH_TOKEN": "user-token",
+			},
+		}
+		if err := config.SaveSettings(userSettings); err != nil {
+			t.Fatalf("Failed to save user settings: %v", err)
+		}
+
+		// Save initial config
+		if err := config.Save(cfg); err != nil {
+			t.Fatalf("Failed to save config: %v", err)
+		}
+
+		// Switch to glm
+		result, err := SwitchWithHook(cfg, "glm")
+		if err != nil {
+			t.Fatalf("SwitchWithHook() error = %v", err)
+		}
+
+		// All user env keys should be filtered:
+		// - API_TIMEOUT conflicts with base env
+		// - ANTHROPIC_AUTH_TOKEN has ANTHROPIC_ prefix
+		settingsEnv := config.GetEnv(result.Settings)
+		if settingsEnv != nil {
+			t.Errorf("Settings env should be nil when all user keys are filtered, got: %v", settingsEnv)
+		}
+
+		// Subprocess env should use base + provider values, not user's
+		envMap := make(map[string]string)
+		for _, pair := range result.EnvVars {
+			envMap[pair.Key] = pair.Value
+		}
+		if envMap["API_TIMEOUT"] != "30000" {
+			t.Errorf("Subprocess API_TIMEOUT = %v, want 30000 (from base)", envMap["API_TIMEOUT"])
+		}
+		if envMap["ANTHROPIC_AUTH_TOKEN"] != "sk-glm-xxx" {
+			t.Errorf("Subprocess ANTHROPIC_AUTH_TOKEN = %v, want sk-glm-xxx (from provider)", envMap["ANTHROPIC_AUTH_TOKEN"])
+		}
+	})
+
 	pairs := []EnvPair{
 		{Key: "FOO", Value: "bar"},
 		{Key: "BAZ", Value: "qux"},

@@ -752,147 +752,204 @@ func TestLoadSettings(t *testing.T) {
 	})
 }
 
-func TestCleanEnvInSettings(t *testing.T) {
-	t.Run("removes ANTHROPIC_ prefixed keys", func(t *testing.T) {
-		settings := map[string]interface{}{
-			"env": map[string]interface{}{
+func TestFilterUserEnvForSettings(t *testing.T) {
+	tests := []struct {
+		name           string
+		userEnv        map[string]interface{}
+		managedEnvKeys map[string]bool
+		want           map[string]interface{}
+	}{
+		{
+			name: "keeps safe keys only",
+			userEnv: map[string]interface{}{
+				"MY_CUSTOM_VAR": "value1",
+				"MY_OTHER_VAR":  "value2",
+			},
+			managedEnvKeys: map[string]bool{
+				"API_TIMEOUT": true,
+			},
+			want: map[string]interface{}{
+				"MY_CUSTOM_VAR": "value1",
+				"MY_OTHER_VAR":  "value2",
+			},
+		},
+		{
+			name: "removes managed keys",
+			userEnv: map[string]interface{}{
+				"API_TIMEOUT":   "30000",
+				"MY_VAR":        "value",
+				"DISABLE_TELEM": "1",
+			},
+			managedEnvKeys: map[string]bool{
+				"API_TIMEOUT":   true,
+				"DISABLE_TELEM": true,
+			},
+			want: map[string]interface{}{
+				"MY_VAR": "value",
+			},
+		},
+		{
+			name: "removes ANTHROPIC_ prefixed keys",
+			userEnv: map[string]interface{}{
 				"ANTHROPIC_MODEL":    "claude-3.7-sonnet",
 				"ANTHROPIC_BASE_URL": "https://old-url.com",
 				"MY_CUSTOM_VAR":      "value",
 			},
-		}
-		providerEnvKeys := []string{"BASE_URL"}
-
-		result := CleanEnvInSettings(settings, providerEnvKeys)
-
-		env := result["env"].(map[string]interface{})
-		if _, exists := env["ANTHROPIC_MODEL"]; exists {
-			t.Error("ANTHROPIC_MODEL should be removed")
-		}
-		if _, exists := env["ANTHROPIC_BASE_URL"]; exists {
-			t.Error("ANTHROPIC_BASE_URL should be removed")
-		}
-		if _, exists := env["MY_CUSTOM_VAR"]; !exists {
-			t.Error("MY_CUSTOM_VAR should be kept")
-		}
-	})
-
-	t.Run("removes CLAUDE_ prefixed keys", func(t *testing.T) {
-		settings := map[string]interface{}{
-			"env": map[string]interface{}{
-				"CLAUDE_MODEL": "claude-3",
-				"CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1",
+			managedEnvKeys: map[string]bool{},
+			want: map[string]interface{}{
 				"MY_CUSTOM_VAR": "value",
 			},
-		}
-		providerEnvKeys := []string{}
-
-		result := CleanEnvInSettings(settings, providerEnvKeys)
-
-		env := result["env"].(map[string]interface{})
-		if _, exists := env["CLAUDE_MODEL"]; exists {
-			t.Error("CLAUDE_MODEL should be removed")
-		}
-		if _, exists := env["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"]; exists {
-			t.Error("CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR should be removed")
-		}
-		if _, exists := env["MY_CUSTOM_VAR"]; !exists {
-			t.Error("MY_CUSTOM_VAR should be kept")
-		}
-	})
-
-	t.Run("removes provider env keys", func(t *testing.T) {
-		settings := map[string]interface{}{
-			"env": map[string]interface{}{
-				"BASE_URL":      "old-url",
-				"AUTH_TOKEN":    "old-token",
+		},
+		{
+			name: "removes CLAUDE_ prefixed keys",
+			userEnv: map[string]interface{}{
+				"CLAUDE_MODEL":  "claude-3",
 				"MY_CUSTOM_VAR": "value",
 			},
-		}
-		providerEnvKeys := []string{"BASE_URL", "AUTH_TOKEN"}
-
-		result := CleanEnvInSettings(settings, providerEnvKeys)
-
-		env := result["env"].(map[string]interface{})
-		if _, exists := env["BASE_URL"]; exists {
-			t.Error("BASE_URL should be removed")
-		}
-		if _, exists := env["AUTH_TOKEN"]; exists {
-			t.Error("AUTH_TOKEN should be removed")
-		}
-		if _, exists := env["MY_CUSTOM_VAR"]; !exists {
-			t.Error("MY_CUSTOM_VAR should be kept")
-		}
-	})
-
-	t.Run("keeps non-matching keys", func(t *testing.T) {
-		settings := map[string]interface{}{
-			"env": map[string]interface{}{
-				"MY_CUSTOM_VAR_1": "value1",
-				"MY_CUSTOM_VAR_2": "value2",
+			managedEnvKeys: map[string]bool{},
+			want: map[string]interface{}{
+				"MY_CUSTOM_VAR": "value",
 			},
-		}
-		providerEnvKeys := []string{"BASE_URL"}
-
-		result := CleanEnvInSettings(settings, providerEnvKeys)
-
-		env := result["env"].(map[string]interface{})
-		if len(env) != 2 {
-			t.Errorf("env should have 2 keys, got %d", len(env))
-		}
-		if env["MY_CUSTOM_VAR_1"] != "value1" {
-			t.Error("MY_CUSTOM_VAR_1 should be kept")
-		}
-		if env["MY_CUSTOM_VAR_2"] != "value2" {
-			t.Error("MY_CUSTOM_VAR_2 should be kept")
-		}
-	})
-
-	t.Run("handles empty env", func(t *testing.T) {
-		settings := map[string]interface{}{
-			"env": map[string]interface{}{},
-		}
-		providerEnvKeys := []string{"BASE_URL"}
-
-		result := CleanEnvInSettings(settings, providerEnvKeys)
-
-		env, exists := result["env"]
-		if !exists || len(env.(map[string]interface{})) != 0 {
-			t.Error("empty env should remain empty")
-		}
-	})
-
-	t.Run("handles missing env", func(t *testing.T) {
-		settings := map[string]interface{}{
-			"otherKey": "value",
-		}
-		providerEnvKeys := []string{}
-
-		result := CleanEnvInSettings(settings, providerEnvKeys)
-
-		if _, exists := result["env"]; exists {
-			t.Error("missing env should not be created")
-		}
-	})
-
-	t.Run("does not modify input", func(t *testing.T) {
-		settings := map[string]interface{}{
-			"env": map[string]interface{}{
+		},
+		{
+			name:           "nil user env returns nil",
+			userEnv:        nil,
+			managedEnvKeys: map[string]bool{},
+			want:           nil,
+		},
+		{
+			name: "empty user env returns nil",
+			userEnv: map[string]interface{}{
 				"ANTHROPIC_MODEL": "value",
 			},
-			"otherKey": "value",
-		}
-		providerEnvKeys := []string{"BASE_URL"}
+			managedEnvKeys: map[string]bool{},
+			want:           nil,
+		},
+		{
+			name: "all keys conflicting returns nil",
+			userEnv: map[string]interface{}{
+				"API_TIMEOUT": "30000",
+			},
+			managedEnvKeys: map[string]bool{
+				"API_TIMEOUT": true,
+			},
+			want: nil,
+		},
+		{
+			name: "empty managed keys keeps all safe keys",
+			userEnv: map[string]interface{}{
+				"MY_VAR": "value",
+			},
+			managedEnvKeys: map[string]bool{},
+			want: map[string]interface{}{
+				"MY_VAR": "value",
+			},
+		},
+	}
 
-		_ = CleanEnvInSettings(settings, providerEnvKeys)
-
-		// Original should not be modified
-		if env, exists := settings["env"]; exists {
-			if _, exists := env.(map[string]interface{})["ANTHROPIC_MODEL"]; !exists {
-				t.Error("Original settings should not be modified")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FilterUserEnvForSettings(tt.userEnv, tt.managedEnvKeys)
+			if !reflect.DeepEqual(got, tt.want) {
+				gotJSON, _ := json.MarshalIndent(got, "", "  ")
+				wantJSON, _ := json.MarshalIndent(tt.want, "", "  ")
+				t.Errorf("FilterUserEnvForSettings() =\n%s\n\nwant:\n%s", gotJSON, wantJSON)
 			}
-		}
-	})
+		})
+	}
+}
+
+func TestMergeEnvMaps(t *testing.T) {
+	tests := []struct {
+		name string
+		maps []map[string]interface{}
+		want map[string]interface{}
+	}{
+		{
+			name: "merges two maps",
+			maps: []map[string]interface{}{
+				{"A": "1"},
+				{"B": "2"},
+			},
+			want: map[string]interface{}{
+				"A": "1",
+				"B": "2",
+			},
+		},
+		{
+			name: "later map overrides earlier",
+			maps: []map[string]interface{}{
+				{"A": "1", "B": "1"},
+				{"B": "2", "C": "2"},
+			},
+			want: map[string]interface{}{
+				"A": "1",
+				"B": "2",
+				"C": "2",
+			},
+		},
+		{
+			name: "single map",
+			maps: []map[string]interface{}{
+				{"A": "1"},
+			},
+			want: map[string]interface{}{
+				"A": "1",
+			},
+		},
+		{
+			name: "nil maps are skipped",
+			maps: []map[string]interface{}{
+				nil,
+				{"A": "1"},
+				nil,
+			},
+			want: map[string]interface{}{
+				"A": "1",
+			},
+		},
+		{
+			name: "all nil returns nil",
+			maps: []map[string]interface{}{
+				nil,
+				nil,
+			},
+			want: nil,
+		},
+		{
+			name: "empty maps return nil",
+			maps: []map[string]interface{}{
+				{},
+				{},
+			},
+			want: nil,
+		},
+		{
+			name: "three maps with cascading override",
+			maps: []map[string]interface{}{
+				{"A": "1", "B": "1"},
+				{"B": "2", "C": "2"},
+				{"C": "3", "D": "3"},
+			},
+			want: map[string]interface{}{
+				"A": "1",
+				"B": "2",
+				"C": "3",
+				"D": "3",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MergeEnvMaps(tt.maps...)
+			if !reflect.DeepEqual(got, tt.want) {
+				gotJSON, _ := json.MarshalIndent(got, "", "  ")
+				wantJSON, _ := json.MarshalIndent(tt.want, "", "  ")
+				t.Errorf("MergeEnvMaps() =\n%s\n\nwant:\n%s", gotJSON, wantJSON)
+			}
+		})
+	}
 }
 
 func TestMergeWithPriority(t *testing.T) {
