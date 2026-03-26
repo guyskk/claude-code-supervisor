@@ -71,18 +71,24 @@ ccc 不应该：
 
 ## 字段处理策略
 
-### 1. env 字段 - 特殊处理
+### 1. env 字段 - 分离处理
 
-**处理方式**：清空特定键，避免配置冲突。
+**处理方式**：区分"用户 env"和"ccc env"，分别写入 settings.json 和子进程。
 
-需要清空的键：
-1. 特定前缀：`ANTHROPIC_*`、`CLAUDE_*`
-2. 与 provider env 相同的 key
+**写入 settings.json 的 env**：
+- 只保留用户在 settings.json 中定义的 env key
+- 排除与 base/provider env 冲突的 key
+- 排除 `ANTHROPIC_*`/`CLAUDE_*` 前缀的 key
+- 如果过滤后为空，不写 env 字段
+
+**传递给子进程的 env**：
+- 只包含 base + provider 的 env
+- 不包含用户 settings.json 的 env（Claude Code 自己从 settings.json 读取）
 
 **原因**：
 - provider 的环境变量通过命令行传递给 claude 子进程
-- 如果 settings.json 中保留这些键，会产生不确定性（不确定哪边生效）
-- 清空后确保 provider env 的行为可预测
+- 用户自定义的非冲突 env 需要保留在 settings.json 中供 Claude Code 使用
+- 子进程只需 base + provider env，避免重复
 
 **示例**：
 
@@ -92,8 +98,14 @@ ccc 不应该：
   "env": {
     "ANTHROPIC_MODEL": "claude-3.7-sonnet",
     "MY_CUSTOM_VAR": "value",
-    "ANTHROPIC_BASE_URL": "old-url"
+    "DISABLE_TELEMETRY": "1"
   }
+}
+
+// base env
+{
+  "API_TIMEOUT": "30000",
+  "DISABLE_TELEMETRY": "1"
 }
 
 // provider env
@@ -103,11 +115,22 @@ ccc 不应该：
   "ANTHROPIC_MODEL": "glm-4.7"
 }
 
-// 处理后
+// 写入 settings.json 的 env
 {
   "env": {
-    "MY_CUSTOM_VAR": "value"    // 保留（非 ANTHROPIC_* 且非 provider key）
+    "MY_CUSTOM_VAR": "value"    // 保留（非冲突、非 ANTHROPIC_*/CLAUDE_*）
   }
+  // DISABLE_TELEMETRY 被过滤（与 base env 冲突）
+  // ANTHROPIC_MODEL 被过滤（ANTHROPIC_* 前缀）
+}
+
+// 传递给子进程的 env（base + provider）
+{
+  "API_TIMEOUT": "30000",
+  "DISABLE_TELEMETRY": "1",
+  "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+  "ANTHROPIC_AUTH_TOKEN": "token123",
+  "ANTHROPIC_MODEL": "glm-4.7"
 }
 ```
 
@@ -237,33 +260,44 @@ func LoadSettings() (map[string]interface{}, error)
 
 ---
 
-### 2. CleanEnvInSettings()
+### 2. FilterUserEnvForSettings()
 
-**描述**：清空 settings.env 中的特定环境变量键。
+**描述**：过滤用户自定义 env，只保留安全的 key。
 
 **签名**：
 ```go
-// CleanEnvInSettings removes specific environment variable keys from settings.env.
-// It removes:
-//   1. Keys with specific prefixes (ANTHROPIC_*, CLAUDE_*)
-//   2. Keys that match provider env keys
-// Returns a new map without modifying the input.
-func CleanEnvInSettings(settings map[string]interface{}, providerEnvKeys []string) map[string]interface{}
+// FilterUserEnvForSettings filters user-defined env to only keep safe keys.
+// Removes keys in managedEnvKeys or with ANTHROPIC_*/CLAUDE_* prefix.
+// Returns nil if no keys remain.
+func FilterUserEnvForSettings(userEnv map[string]interface{}, managedEnvKeys map[string]bool) map[string]interface{}
 ```
 
 **逻辑**：
-1. 深拷贝 settings（不修改输入）
-2. 获取 `env` map（不存在则跳过）
-3. 遍历每个 key
-4. 删除满足以下任一条件的 key：
-   - 以 `ANTHROPIC_` 开头
-   - 以 `CLAUDE_` 开头
-   - 存在于 `providerEnvKeys` 列表中
-5. 返回新的 map
+1. 遍历 userEnv 的每个 key
+2. 跳过在 managedEnvKeys 中的 key（与 base/provider 冲突）
+3. 跳过 `ANTHROPIC_*`/`CLAUDE_*` 前缀的 key
+4. 如果过滤后为空，返回 nil
 
 ---
 
-### 3. MergeWithPriority()
+### 3. MergeEnvMaps()
+
+**描述**：合并多个 env map，后者覆盖前者。
+
+**签名**：
+```go
+// MergeEnvMaps merges multiple env maps. Later maps override earlier ones.
+func MergeEnvMaps(maps ...map[string]interface{}) map[string]interface{}
+```
+
+**逻辑**：
+1. 遍历所有 map，依次合并
+2. nil map 被跳过
+3. 如果结果为空，返回 nil
+
+---
+
+### 4. MergeWithPriority()
 
 **描述**：按优先级深度合并多个配置源。
 
@@ -289,7 +323,7 @@ func MergeWithPriority(baseSettings, providerSettings, userSettings map[string]i
 
 ---
 
-### 4. EnsureStopHook()
+### 5. EnsureStopHook()
 
 **描述**：确保 Supervisor Stop hook 存在于 settings 中。
 
@@ -323,22 +357,30 @@ func EnsureStopHook(settings map[string]interface{}, hookCommand string) map[str
   ├─→ baseSettings = cfg.Settings
   ├─→ providerSettings = cfg.Providers[providerName]
   │
-  ├─→ 提取 provider env keys
+  ├─→ 提取各来源 env（合并前）
+  │   ├─→ userEnvMap = GetEnv(userSettings)
+  │   ├─→ baseEnvMap = GetEnv(cfg.Settings)
+  │   └─→ providerEnvMap = GetEnv(providerSettings)
+  │
+  ├─→ 构建 managedEnvKeys = base env keys + provider env keys
   │
   ├─→ MergeWithPriority(baseSettings, providerSettings, userSettings)
   │   │
   │   └─→ merged = DeepMerge(DeepCopy(baseSettings), providerSettings)
   │           merged = DeepMerge(merged, userSettings)  ← userSettings 优先
   │
-  ├─→ CleanEnvInSettings(merged, providerEnvKeys)
-  │   └─→ 清空 ANTHROPIC_*, CLAUDE_*, provider env keys
-  │
   ├─→ EnsureStopHook(merged, hookCommand)
   │   └─→ 确保 Supervisor Stop hook 存在
   │
-  ├─→ 确保 hooks 可执行
-  │   ├─→ merged["disableAllHooks"] = false
-  │   └─→ merged["allowManagedHooksOnly"] = false
+  ├─→ delete(merged, "env")
+  │   └─→ 移除合并后的 env
+  │
+  ├─→ FilterUserEnvForSettings(userEnvMap, managedEnvKeys)
+  │   └─→ 过滤用户 env，保留安全 key
+  │   └─→ 如果有结果，写入 merged["env"]
+  │
+  ├─→ MergeEnvMaps(baseEnvMap, providerEnvMap)
+  │   └─→ 子进程 env = base + provider（不含用户 env）
   │
   └─→ 保存 merged 到 settings.json
 ```
@@ -403,7 +445,7 @@ func EnsureStopHook(settings map[string]interface{}, hookCommand string) map[str
 
 ---
 
-### 场景 3：env 字段清空
+### 场景 3：env 字段分离处理
 
 ```json
 // settings.json 初始内容
@@ -423,13 +465,25 @@ func EnsureStopHook(settings map[string]interface{}, hookCommand string) map[str
 }
 ```
 
-**处理后**：
+**写入 settings.json**（只保留安全用户 env）：
 
 ```json
 {
   "env": {
-    "MY_CUSTOM_VAR": "value"    // 保留（非 ANTHROPIC_* 且非 CLAUDE_* 且非 provider key）
+    "MY_CUSTOM_VAR": "value"    // 保留（非冲突、非 ANTHROPIC_*/CLAUDE_*）
   }
+  // ANTHROPIC_MODEL 被过滤（ANTHROPIC_* 前缀）
+  // CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR 被过滤（CLAUDE_* 前缀）
+}
+```
+
+**传递给子进程**（base + provider env）：
+
+```json
+{
+  "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+  "ANTHROPIC_AUTH_TOKEN": "token123",
+  "ANTHROPIC_MODEL": "glm-4.7"
 }
 ```
 
@@ -481,7 +535,7 @@ func EnsureStopHook(settings map[string]interface{}, hookCommand string) map[str
 
 | 文件 | 修改内容 |
 |------|----------|
-| `internal/config/config.go` | 新增 LoadSettings、CleanEnvInSettings、MergeWithPriority、EnsureStopHook |
+| `internal/config/config.go` | 新增 LoadSettings、FilterUserEnvForSettings、MergeEnvMaps、MergeWithPriority、EnsureStopHook |
 | `internal/provider/provider.go` | 重写 SwitchWithHook() 函数逻辑 |
 | `internal/config/config_test.go` | 为新函数添加测试 |
 

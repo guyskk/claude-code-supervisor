@@ -250,57 +250,46 @@ func LoadSettings() (map[string]interface{}, error) {
 	return settings, nil
 }
 
-// CleanEnvInSettings removes specific environment variable keys from settings.env.
-// It removes:
-//  1. Keys with specific prefixes (ANTHROPIC_*, CLAUDE_*)
-//  2. Keys that match provider env keys
-//
-// Returns a new map without modifying the input.
-func CleanEnvInSettings(settings map[string]interface{}, providerEnvKeys []string) map[string]interface{} {
-	// Deep copy to avoid modifying input
-	result := deepCopy(settings)
-
-	// Get env map if it exists
-	envVal, envExists := result["env"]
-	if !envExists {
-		// No env to clean
-		return result
+// FilterUserEnvForSettings filters user-defined env to only keep safe keys.
+// It removes keys in managedEnvKeys or with ANTHROPIC_*/CLAUDE_* prefix.
+// Returns nil if no keys remain.
+func FilterUserEnvForSettings(userEnv map[string]interface{}, managedEnvKeys map[string]bool) map[string]interface{} {
+	if userEnv == nil {
+		return nil
 	}
 
-	env, ok := envVal.(map[string]interface{})
-	if !ok {
-		// env is not a map, nothing to clean
-		return result
-	}
-
-	// Build set of keys to remove for O(1) lookup
-	keysToRemove := make(map[string]bool)
-	for _, key := range providerEnvKeys {
-		keysToRemove[key] = true
-	}
-
-	// Remove keys from env
-	for key := range env {
-		shouldRemove := false
-
-		// Check for specific prefixes
+	filtered := make(map[string]interface{})
+	for key, value := range userEnv {
+		if managedEnvKeys[key] {
+			continue
+		}
 		if strings.HasPrefix(key, "ANTHROPIC_") || strings.HasPrefix(key, "CLAUDE_") {
-			shouldRemove = true
+			continue
 		}
-
-		// Check for provider env keys
-		if keysToRemove[key] {
-			shouldRemove = true
-		}
-
-		if shouldRemove {
-			delete(env, key)
-		}
+		filtered[key] = value
 	}
 
-	// Update env in result (always update to preserve the structure)
-	result["env"] = env
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
 
+// MergeEnvMaps merges multiple env maps. Later maps override earlier ones.
+// Returns nil if no maps have entries.
+func MergeEnvMaps(maps ...map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+	for _, m := range maps {
+		if m == nil {
+			continue
+		}
+		for k, v := range m {
+			result[k] = v
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
 	return result
 }
 

@@ -51,18 +51,22 @@ func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, err
 		return nil, fmt.Errorf("failed to load settings: %w", err)
 	}
 
-	// Merge with priority: user > provider > base
-	mergedSettings := config.MergeWithPriority(cfg.Settings, providerSettings, userSettings)
-
-	// Extract provider env keys for cleaning
+	// Extract env from each source before merging (to distinguish user env from ccc env)
+	userEnvMap := config.GetEnv(userSettings)
+	baseEnvMap := config.GetEnv(cfg.Settings)
 	providerEnvMap := config.GetEnv(providerSettings)
-	var providerEnvKeys []string
+
+	// Build managed keys = base env keys + provider env keys
+	managedEnvKeys := make(map[string]bool)
+	for key := range baseEnvMap {
+		managedEnvKeys[key] = true
+	}
 	for key := range providerEnvMap {
-		providerEnvKeys = append(providerEnvKeys, key)
+		managedEnvKeys[key] = true
 	}
 
-	// Clean env: remove ANTHROPIC_*, CLAUDE_* prefixes and provider env keys
-	settingsWithHook := config.CleanEnvInSettings(mergedSettings, providerEnvKeys)
+	// Merge settings with priority: user > provider > base
+	mergedSettings := config.MergeWithPriority(cfg.Settings, providerSettings, userSettings)
 
 	// Get ccc absolute path for hook command
 	cccPath, err := os.Executable()
@@ -75,10 +79,13 @@ func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, err
 
 	// Ensure Supervisor Stop hook exists (preserves user's other hooks)
 	// This also sets disableAllHooks and allowManagedHooksOnly to false
-	settingsWithHook = config.EnsureStopHook(settingsWithHook, hookCommand)
+	settingsWithHook := config.EnsureStopHook(mergedSettings, hookCommand)
 
-	// Remove env from settings before saving (provider env is passed via command line)
+	// Remove merged env from settings, replace with filtered user env
 	delete(settingsWithHook, "env")
+	if filtered := config.FilterUserEnvForSettings(userEnvMap, managedEnvKeys); len(filtered) > 0 {
+		settingsWithHook["env"] = filtered
+	}
 
 	// Save merged settings to settings.json
 	settingsPath := config.GetSettingsPath()
@@ -101,11 +108,11 @@ func SwitchWithHook(cfg *config.Config, providerName string) (*SwitchResult, err
 		return nil, fmt.Errorf("failed to update current provider: %w", err)
 	}
 
-	// Extract env map from merged settings for passing to subprocess
-	envMap := config.GetEnv(mergedSettings)
+	// Extract env map for subprocess: only base + provider env (not user env)
+	subprocessEnvMap := config.MergeEnvMaps(baseEnvMap, providerEnvMap)
 
 	// Convert env map to EnvPair slice
-	envVars := envMapToPairs(envMap)
+	envVars := envMapToPairs(subprocessEnvMap)
 
 	return &SwitchResult{
 		Settings: settingsWithHook,
