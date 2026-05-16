@@ -76,8 +76,7 @@ ccc 不应该：
 **处理方式**：清空特定键，避免配置冲突。
 
 需要清空的键：
-1. 特定前缀：`ANTHROPIC_*`、`CLAUDE_*`
-2. 与 provider env 相同的 key
+1. 与 provider env 相同的 key
 
 **原因**：
 - provider 的环境变量通过命令行传递给 claude 子进程
@@ -90,23 +89,23 @@ ccc 不应该：
 // settings.json 初始内容
 {
   "env": {
-    "ANTHROPIC_MODEL": "claude-3.7-sonnet",
-    "MY_CUSTOM_VAR": "value",
-    "ANTHROPIC_BASE_URL": "old-url"
+    "ANTHROPIC_API_KEY": "user-key",
+    "ANTHROPIC_BASE_URL": "old-url",
+    "MY_CUSTOM_VAR": "value"
   }
 }
 
 // provider env
 {
   "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
-  "ANTHROPIC_AUTH_TOKEN": "token123",
-  "ANTHROPIC_MODEL": "glm-4.7"
+  "ANTHROPIC_AUTH_TOKEN": "token123"
 }
 
 // 处理后
 {
   "env": {
-    "MY_CUSTOM_VAR": "value"    // 保留（非 ANTHROPIC_* 且非 provider key）
+    "ANTHROPIC_API_KEY": "user-key",
+    "MY_CUSTOM_VAR": "value"
   }
 }
 ```
@@ -243,10 +242,7 @@ func LoadSettings() (map[string]interface{}, error)
 
 **签名**：
 ```go
-// CleanEnvInSettings removes specific environment variable keys from settings.env.
-// It removes:
-//   1. Keys with specific prefixes (ANTHROPIC_*, CLAUDE_*)
-//   2. Keys that match provider env keys
+// CleanEnvInSettings removes environment variable keys controlled by the current provider.
 // Returns a new map without modifying the input.
 func CleanEnvInSettings(settings map[string]interface{}, providerEnvKeys []string) map[string]interface{}
 ```
@@ -331,7 +327,7 @@ func EnsureStopHook(settings map[string]interface{}, hookCommand string) map[str
   │           merged = DeepMerge(merged, userSettings)  ← userSettings 优先
   │
   ├─→ CleanEnvInSettings(merged, providerEnvKeys)
-  │   └─→ 清空 ANTHROPIC_*, CLAUDE_*, provider env keys
+  │   └─→ 清空 provider env keys
   │
   ├─→ EnsureStopHook(merged, hookCommand)
   │   └─→ 确保 Supervisor Stop hook 存在
@@ -428,7 +424,7 @@ func EnsureStopHook(settings map[string]interface{}, hookCommand string) map[str
 ```json
 {
   "env": {
-    "MY_CUSTOM_VAR": "value"    // 保留（非 ANTHROPIC_* 且非 CLAUDE_* 且非 provider key）
+    "MY_CUSTOM_VAR": "value"    // 保留（非 provider key）
   }
 }
 ```

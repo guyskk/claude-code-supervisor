@@ -166,7 +166,7 @@ Config file location, default: `~/.claude/ccc.json`
 #### What Gets Managed
 
 - 🤖 Supervisor Stop hook - automatically added/ensured
-- 🧹 Environment variable conflicts - `ANTHROPIC_*`, `CLAUDE_*`, and provider env keys are removed from `settings.json` to avoid ambiguity
+- 🧹 Environment variable conflicts - keys also defined by the current provider env are removed from `settings.json` to avoid ambiguity
 - ⚙️ Hook execution flags - `disableAllHooks` and `allowManagedHooksOnly` set to `false` to ensure hooks work
 
 #### How It Works

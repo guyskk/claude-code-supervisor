@@ -109,7 +109,7 @@ ccc validate --all
 #### 管理的内容
 
 - 🤖 Supervisor Stop hook - 自动添加/确保
-- 🧹 环境变量冲突 - `ANTHROPIC_*`、`CLAUDE_*` 和提供商 env 键从 `settings.json` 中移除以避免歧义
+- 🧹 环境变量冲突 - 与当前提供商 env 同名的 key 会从 `settings.json` 中移除以避免歧义
 - ⚙️ Hook 执行标志 - `disableAllHooks` 和 `allowManagedHooksOnly` 设置为 `false` 以确保 hooks 能正常工作
 
 #### 工作原理

@@ -101,12 +101,12 @@ func TestSwitchWithHook(t *testing.T) {
 		if !exists {
 			t.Fatal("Settings should contain 'env' field")
 		}
-		
+
 		settingsEnvMap, ok := settingsEnv.(map[string]interface{})
 		if !ok {
 			t.Fatal("env should be a map")
 		}
-		
+
 		// Should not contain provider env variables
 		if _, exists := settingsEnvMap["ANTHROPIC_BASE_URL"]; exists {
 			t.Error("Settings should not contain provider ANTHROPIC_BASE_URL")
@@ -120,7 +120,7 @@ func TestSwitchWithHook(t *testing.T) {
 		if _, exists := settingsEnvMap["ANTHROPIC_MODEL"]; exists {
 			t.Error("Settings should not contain provider ANTHROPIC_MODEL")
 		}
-		
+
 		// Should contain user env variables
 		if settingsEnvMap["API_TIMEOUT"] != "30000" {
 			t.Error("Settings should contain user API_TIMEOUT")

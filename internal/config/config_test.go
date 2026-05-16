@@ -753,34 +753,34 @@ func TestLoadSettings(t *testing.T) {
 }
 
 func TestCleanEnvInSettings(t *testing.T) {
-	t.Run("removes ANTHROPIC_ prefixed keys", func(t *testing.T) {
+	t.Run("keeps ANTHROPIC user env keys when provider does not define them", func(t *testing.T) {
 		settings := map[string]interface{}{
 			"env": map[string]interface{}{
-				"ANTHROPIC_MODEL":    "claude-3.7-sonnet",
-				"ANTHROPIC_BASE_URL": "https://old-url.com",
-				"MY_CUSTOM_VAR":      "value",
+				"ANTHROPIC_API_KEY": "user-key",
+				"ANTHROPIC_MODEL":   "claude-3.7-sonnet",
+				"MY_CUSTOM_VAR":     "value",
 			},
 		}
-		providerEnvKeys := []string{"BASE_URL"}
+		providerEnvKeys := []string{"ANTHROPIC_BASE_URL"}
 
 		result := CleanEnvInSettings(settings, providerEnvKeys)
 
 		env := result["env"].(map[string]interface{})
-		if _, exists := env["ANTHROPIC_MODEL"]; exists {
-			t.Error("ANTHROPIC_MODEL should be removed")
+		if env["ANTHROPIC_API_KEY"] != "user-key" {
+			t.Error("ANTHROPIC_API_KEY should be kept")
 		}
-		if _, exists := env["ANTHROPIC_BASE_URL"]; exists {
-			t.Error("ANTHROPIC_BASE_URL should be removed")
+		if env["ANTHROPIC_MODEL"] != "claude-3.7-sonnet" {
+			t.Error("ANTHROPIC_MODEL should be kept")
 		}
-		if _, exists := env["MY_CUSTOM_VAR"]; !exists {
+		if env["MY_CUSTOM_VAR"] != "value" {
 			t.Error("MY_CUSTOM_VAR should be kept")
 		}
 	})
 
-	t.Run("removes CLAUDE_ prefixed keys", func(t *testing.T) {
+	t.Run("keeps CLAUDE_CODE user env keys", func(t *testing.T) {
 		settings := map[string]interface{}{
 			"env": map[string]interface{}{
-				"CLAUDE_MODEL": "claude-3",
+				"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS":     "1",
 				"CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1",
 				"MY_CUSTOM_VAR": "value",
 			},
@@ -790,13 +790,13 @@ func TestCleanEnvInSettings(t *testing.T) {
 		result := CleanEnvInSettings(settings, providerEnvKeys)
 
 		env := result["env"].(map[string]interface{})
-		if _, exists := env["CLAUDE_MODEL"]; exists {
-			t.Error("CLAUDE_MODEL should be removed")
+		if env["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"] != "1" {
+			t.Error("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS should be kept")
 		}
-		if _, exists := env["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"]; exists {
-			t.Error("CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR should be removed")
+		if env["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"] != "1" {
+			t.Error("CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR should be kept")
 		}
-		if _, exists := env["MY_CUSTOM_VAR"]; !exists {
+		if env["MY_CUSTOM_VAR"] != "value" {
 			t.Error("MY_CUSTOM_VAR should be kept")
 		}
 	})

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // stopHookTimeout is the timeout in seconds for the Supervisor Stop hook.
@@ -250,11 +249,7 @@ func LoadSettings() (map[string]interface{}, error) {
 	return settings, nil
 }
 
-// CleanEnvInSettings removes specific environment variable keys from settings.env.
-// It removes:
-//  1. Keys with specific prefixes (ANTHROPIC_*, CLAUDE_*)
-//  2. Keys that match provider env keys
-//
+// CleanEnvInSettings removes environment variable keys controlled by the current provider.
 // Returns a new map without modifying the input.
 func CleanEnvInSettings(settings map[string]interface{}, providerEnvKeys []string) map[string]interface{} {
 	// Deep copy to avoid modifying input
@@ -279,21 +274,9 @@ func CleanEnvInSettings(settings map[string]interface{}, providerEnvKeys []strin
 		keysToRemove[key] = true
 	}
 
-	// Remove keys from env
+	// Remove provider env keys from settings.env
 	for key := range env {
-		shouldRemove := false
-
-		// Check for specific prefixes
-		if strings.HasPrefix(key, "ANTHROPIC_") || strings.HasPrefix(key, "CLAUDE_") {
-			shouldRemove = true
-		}
-
-		// Check for provider env keys
 		if keysToRemove[key] {
-			shouldRemove = true
-		}
-
-		if shouldRemove {
 			delete(env, key)
 		}
 	}
