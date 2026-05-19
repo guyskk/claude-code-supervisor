@@ -71,24 +71,23 @@ ccc 不应该：
 
 ## 字段处理策略
 
-### 1. env 字段 - 分离处理
+### 1. env 字段 - 硬守卫（不再自动剥离）
 
-**处理方式**：区分"用户 env"和"ccc env"，分别写入 settings.json 和子进程。
+**当前策略**：检测到冲突即报错中止，ccc 永不修改 settings.json 的 `env` 字段。
 
-**写入 settings.json 的 env**：
-- 只保留用户在 settings.json 中定义的 env key
-- 排除与 base/provider env 冲突的 key
-- 排除 `ANTHROPIC_*`/`CLAUDE_*` 前缀的 key
-- 如果过滤后为空，不写 env 字段
+> **破坏性变化（2026-05-19 更新）**：早期版本会静默剥离 settings.json `env` 中的 `ANTHROPIC_*`/`CLAUDE_*` 或与 provider/base 同名的 key。实测确认 Claude Code 中 `settings.json` 的 `env` 严格覆盖进程 env，因此残留任何冲突 key 都会导致切换 provider 静默失效。当前实现改为**硬守卫**：检测到冲突就直接报错中止（不启动 claude，也不放行 `ccc validate`），由用户自行清理 settings.json，避免静默丢配置或静默用错配置两种风险。详见 `docs/discuss-20260519-env-priority.md`。
 
-**传递给子进程的 env**：
-- 只包含 base + provider 的 env
-- 不包含用户 settings.json 的 env（Claude Code 自己从 settings.json 读取）
+**冲突判据**（命中任一即冲突）：
+- key 以 `ANTHROPIC_` 或 `CLAUDE_` 开头；
+- key 与 base env（`ccc.json` 的 `settings.env`）或 provider env（`ccc.json` 的 `providers.<name>.env`）同名（managed key）。
 
-**原因**：
-- provider 的环境变量通过命令行传递给 claude 子进程
-- 用户自定义的非冲突 env 需要保留在 settings.json 中供 Claude Code 使用
-- 子进程只需 base + provider env，避免重复
+**冲突报错**：列出每个冲突 key 的名称（**不打印 value，避免密钥泄露**）、原因、settings.json / ccc.json 文件路径、以及修复指引（用户自行从 settings.json 删除冲突 key，provider 配置移到 ccc.json）。
+
+**传递给子进程的 env**（无冲突时的正常路径）：
+- 只包含 base + provider 的 env；
+- 不包含用户 settings.json 的 env（Claude Code 自己从 settings.json 读取非冲突的用户自定义 env）。
+
+**非冲突的用户自定义 env**（如 `MY_CUSTOM_VAR`）：完全保留在 settings.json 中、不被修改、不被进入子进程合并 env，行为不变。
 
 **示例**：
 
@@ -97,42 +96,18 @@ ccc 不应该：
 {
   "env": {
     "ANTHROPIC_MODEL": "claude-3.7-sonnet",
-    "MY_CUSTOM_VAR": "value",
-    "DISABLE_TELEMETRY": "1"
+    "MY_CUSTOM_VAR": "value"
   }
-}
-
-// base env
-{
-  "API_TIMEOUT": "30000",
-  "DISABLE_TELEMETRY": "1"
 }
 
 // provider env
 {
   "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
-  "ANTHROPIC_AUTH_TOKEN": "token123",
-  "ANTHROPIC_MODEL": "glm-4.7"
-}
-
-// 写入 settings.json 的 env
-{
-  "env": {
-    "MY_CUSTOM_VAR": "value"    // 保留（非冲突、非 ANTHROPIC_*/CLAUDE_*）
-  }
-  // DISABLE_TELEMETRY 被过滤（与 base env 冲突）
-  // ANTHROPIC_MODEL 被过滤（ANTHROPIC_* 前缀）
-}
-
-// 传递给子进程的 env（base + provider）
-{
-  "API_TIMEOUT": "30000",
-  "DISABLE_TELEMETRY": "1",
-  "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
-  "ANTHROPIC_AUTH_TOKEN": "token123",
   "ANTHROPIC_MODEL": "glm-4.7"
 }
 ```
+
+**结果**：ccc 检测到 `ANTHROPIC_MODEL` 冲突 → 报错中止，settings.json 保持原样，由用户决定是删除该 key 还是把 `ANTHROPIC_MODEL` 留作个人偏好（删除后即生效 provider 值）。`MY_CUSTOM_VAR` 不受影响。
 
 ---
 

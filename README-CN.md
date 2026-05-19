@@ -104,13 +104,24 @@ ccc validate --all
 - ✅ 用户安装的插件（`enabledPlugins`）- 不会被覆盖
 - ✅ 手动编辑的 `settings.json`（权限、沙箱等）- 完全保留
 - ✅ 用户配置的其他 hooks（PreToolUse、SessionStart 等）- 被尊重
-- ✅ 用户在 `settings.json` 中手动设置的环境变量 - 不会被删除（除了冲突，见下文）
+- ✅ 用户在 `settings.json` 中手动设置的环境变量 - ccc 不会修改
 
 #### 管理的内容
 
 - 🤖 Supervisor Stop hook - 自动添加/确保
-- 🧹 环境变量冲突 - `ANTHROPIC_*`、`CLAUDE_*` 和提供商 env 键从 `settings.json` 中移除以避免歧义
 - ⚙️ Hook 执行标志 - `disableAllHooks` 和 `allowManagedHooksOnly` 设置为 `false` 以确保 hooks 能正常工作
+
+#### 环境变量冲突（硬守卫）
+
+Claude Code 的 `settings.json` `env` 字段会**覆盖**ccc 启动 claude 时传入的环境变量（实测已验证）。如果 `settings.json` 中存在会遮蔽 provider env 的 key，切换 provider 会静默失效（用错 base_url / token / model）。
+
+**当检测到此类冲突时，ccc 会拒绝启动 claude，`ccc validate` 同样会被拒绝。** ccc 不会静默修改你的文件，而是会打印冲突的 key（不打印 value，避免泄露密钥）并告诉你如何修复。**ccc 不会修改你 `settings.json` 的 `env` 字段。**
+
+满足以下任一条件的 key 视为冲突：
+- 以 `ANTHROPIC_` 或 `CLAUDE_` 开头，**或**
+- 与 ccc.json 中 base / provider `env` 定义的任何 key 同名。
+
+**修复方法**：从 `~/.claude/settings.json` 的 `env` 中删除这些 key，并把 provider 相关配置改到 `~/.claude/ccc.json` 的 `providers.<name>.env` 中。
 
 #### 工作原理
 

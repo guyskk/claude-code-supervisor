@@ -161,13 +161,24 @@ Config file location, default: `~/.claude/ccc.json`
 - ✅ User-installed plugins (`enabledPlugins`) - never overwritten
 - ✅ Manual `settings.json` edits (permissions, sandbox, etc.) - fully preserved
 - ✅ User-configured hooks (PreToolUse, SessionStart, etc.) - respected
-- ✅ Environment variables you manually set in settings.json - not removed (except for conflicts, see below)
+- ✅ Environment variables you manually set in settings.json - ccc never edits them
 
 #### What Gets Managed
 
 - 🤖 Supervisor Stop hook - automatically added/ensured
-- 🧹 Environment variable conflicts - `ANTHROPIC_*`, `CLAUDE_*`, and provider env keys are removed from `settings.json` to avoid ambiguity
 - ⚙️ Hook execution flags - `disableAllHooks` and `allowManagedHooksOnly` set to `false` to ensure hooks work
+
+#### Environment Variable Conflicts (Hard Guard)
+
+Claude Code's `settings.json` `env` field **overrides** environment variables passed by ccc when launching claude (empirically verified). If `settings.json` contains keys that would shadow the provider env, switching providers silently fails (wrong base_url / token / model).
+
+**ccc refuses to start claude — and refuses to run `ccc validate` — when it detects such conflicts.** Instead of silently editing your file, ccc prints the offending keys (without their values, to avoid leaking secrets) and tells you how to fix it. ccc never modifies the `env` field of your `settings.json`.
+
+A key is considered conflicting if it:
+- starts with `ANTHROPIC_` or `CLAUDE_`, **or**
+- collides with any key defined in ccc.json's base / provider `env`.
+
+**How to fix:** remove those keys from `~/.claude/settings.json`'s `env` and move provider-related configuration into `providers.<name>.env` in `~/.claude/ccc.json`.
 
 #### How It Works
 

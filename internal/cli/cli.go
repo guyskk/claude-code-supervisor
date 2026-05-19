@@ -306,6 +306,13 @@ func Run(cmd *Command) error {
 
 // runValidate executes the validate command.
 func runValidate(cfg *config.Config, opts *ValidateCommand) error {
+	// Guard: refuse to validate when settings.json contains env keys that would
+	// silently override provider env. The check mirrors the launch-path guard so
+	// users get the same actionable error from both entry points.
+	if err := checkValidateEnvConflict(cfg, opts); err != nil {
+		return err
+	}
+
 	// Create a config adapter for the validate package
 	cfgAdapter := &configAdapter{cfg: cfg}
 
@@ -315,6 +322,76 @@ func runValidate(cfg *config.Config, opts *ValidateCommand) error {
 	}
 
 	return validate.Run(cfgAdapter, validateOpts)
+}
+
+// checkValidateEnvConflict runs the same env-conflict guard used by runClaude, scoped
+// to the providers about to be validated:
+//   - --all: union of base env + every provider's env (from-strictest stance).
+//   - --provider X (or current): base env + provider X's env.
+//
+// Returns nil when no conflicts, a formatted error otherwise.
+func checkValidateEnvConflict(cfg *config.Config, opts *ValidateCommand) error {
+	userSettings, err := config.LoadSettings()
+	if err != nil {
+		return fmt.Errorf("failed to load settings.json for conflict check: %w", err)
+	}
+	if userSettings == nil {
+		return nil
+	}
+
+	managedEnvKeys := make(map[string]bool)
+	for key := range config.GetEnv(cfg.Settings) {
+		managedEnvKeys[key] = true
+	}
+
+	providerNames := validateTargetProviders(cfg, opts)
+	for _, name := range providerNames {
+		providerSettings, ok := cfg.Providers[name]
+		if !ok {
+			continue
+		}
+		for key := range config.GetEnv(providerSettings) {
+			managedEnvKeys[key] = true
+		}
+	}
+
+	conflicts := config.DetectSettingsEnvConflicts(userSettings, managedEnvKeys)
+	if len(conflicts) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("%s", config.FormatEnvConflictError(
+		config.GetSettingsPath(),
+		config.GetConfigPath(),
+		conflicts,
+	))
+}
+
+// validateTargetProviders returns the provider names whose env keys should contribute
+// to managedEnvKeys for the validate guard. For --all (or when a specific provider is
+// not provided and there's no current provider), it returns every configured provider.
+func validateTargetProviders(cfg *config.Config, opts *ValidateCommand) []string {
+	if opts.ValidateAll {
+		names := make([]string, 0, len(cfg.Providers))
+		for name := range cfg.Providers {
+			names = append(names, name)
+		}
+		return names
+	}
+
+	name := opts.Provider
+	if name == "" {
+		name = cfg.CurrentProvider
+	}
+	if name == "" {
+		// No target identifiable: treat as --all to stay strict.
+		names := make([]string, 0, len(cfg.Providers))
+		for n := range cfg.Providers {
+			names = append(names, n)
+		}
+		return names
+	}
+	return []string{name}
 }
 
 // configAdapter adapts config.Config to the validate.Config interface.

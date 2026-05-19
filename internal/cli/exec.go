@@ -20,6 +20,49 @@ func executeProcess(path string, args []string, env []string) error {
 	return syscall.Exec(path, args, env)
 }
 
+// checkSettingsEnvConflict refuses to start claude when settings.json's env field
+// contains keys that would silently override the provider env ccc passes to claude.
+// See docs/discuss-20260519-env-priority.md for the empirical proof that settings.json
+// env > process env in Claude Code.
+//
+// managedEnvKeys are derived from base env (cfg.Settings.env) plus the active
+// provider's env. A non-nil error means the user must clean settings.json before ccc
+// will launch claude — ccc never modifies the user's settings.json on their behalf.
+func checkSettingsEnvConflict(cfg *config.Config, providerName string) error {
+	providerSettings, ok := cfg.Providers[providerName]
+	if !ok {
+		// Provider lookup failure is surfaced later by SwitchWithHook; we just skip the guard.
+		return nil
+	}
+
+	userSettings, err := config.LoadSettings()
+	if err != nil {
+		return fmt.Errorf("failed to load settings.json for conflict check: %w", err)
+	}
+	if userSettings == nil {
+		return nil
+	}
+
+	managedEnvKeys := make(map[string]bool)
+	for key := range config.GetEnv(cfg.Settings) {
+		managedEnvKeys[key] = true
+	}
+	for key := range config.GetEnv(providerSettings) {
+		managedEnvKeys[key] = true
+	}
+
+	conflicts := config.DetectSettingsEnvConflicts(userSettings, managedEnvKeys)
+	if len(conflicts) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("%s", config.FormatEnvConflictError(
+		config.GetSettingsPath(),
+		config.GetConfigPath(),
+		conflicts,
+	))
+}
+
 // determineProvider determines which provider to use based on the command and config.
 func determineProvider(cmd *Command, cfg *config.Config) string {
 	if cmd.Provider != "" {
@@ -60,6 +103,14 @@ func runClaude(cfg *config.Config, cmd *Command) error {
 	providerName := determineProvider(cmd, cfg)
 	if providerName == "" {
 		return fmt.Errorf("no providers configured")
+	}
+
+	// Guard: refuse to start claude when settings.json contains env keys that
+	// would silently override the provider env ccc passes to the claude process.
+	// Must run BEFORE SwitchWithHook so we never rewrite settings.json while leaving
+	// the conflict in place. See docs/discuss-20260519-env-priority.md.
+	if err := checkSettingsEnvConflict(cfg, providerName); err != nil {
+		return err
 	}
 
 	// Check if supervisor ID is already set in environment
