@@ -2,6 +2,12 @@
 
 [English](README.md) | [中文文档](README-CN.md)
 
+#### 推荐使用模型：
+
+- **小米顶尖模型 MiMo V2.5-Pro 等，通过我的邀请码注册：双方各得 ¥10 API 体验金 + 首单 9 折。邀请码：2DZZC9。注册： https://platform.xiaomimimo.com?ref=2DZZC9 （注册后自动填入 · 体验金 40 天有效）**
+
+- **智谱 Coding Plan，国内顶流编程大模型，20+主流工具全适配，性价比拉满！👉立即参与「拼好模」：https://www.bigmodel.cn/glm-coding?ic=S8PMS595T0**
+
 ## 为什么选择 ccc？
 
 `ccc` 是一个为 Claude Code 提供无缝提供商切换的命令行工具。一条命令在 Kimi、GLM、MiniMax 等提供商之间切换。
