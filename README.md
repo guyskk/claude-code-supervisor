@@ -196,6 +196,8 @@ CCC_CONFIG_DIR=./tmp ccc glm
 ./build.sh -o ./bin
 ```
 
+**Run checks:** `./check.sh --lint`, `./check.sh --test`, or `./check.sh --build`
+
 **Supported platforms:** `darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64`
 
 ## License
